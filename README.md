@@ -1,0 +1,2 @@
+# ai-free
+free ai
