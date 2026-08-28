@@ -1,0 +1,33 @@
+name: qwen-train
+
+on:
+  schedule:
+    # كل 20 دقيقة على مدار الساعة — GitHib مجاني، يشتغل حتى لو الكمبيوتر مطفي
+    - cron: "*/20 * * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: qwen-train
+  cancel-in-progress: false
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      QWEN_ENABLED: "true"
+      QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
+      QWEN_BASE_URL: ${{ secrets.QWEN_BASE_URL || 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1' }}
+      QWEN_MODEL: ${{ secrets.QWEN_MODEL || 'qwen-coder-plus' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install
+        run: npm ci
+
+      - name: Train one cycle
+        run: npx tsx scripts/train-cron.ts
