@@ -43,3 +43,4 @@ dev.log
 # local scripts clutter
 _test-*.ts
 _probe-*.ts
+scripts/_migrate.ts
