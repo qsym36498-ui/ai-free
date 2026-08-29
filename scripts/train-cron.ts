@@ -15,7 +15,7 @@ async function main(): Promise<void> {
   }
 
   const startedAt = Date.now();
-  const batch = Math.max(1, Math.min(Number(process.env.TRAIN_BATCH) || 6, 10));
+  const batch = Math.max(1, Math.min(Number(process.env.TRAIN_BATCH) || 10, 10));
   const result = await runAutoTrainCycle(batch);
   const seconds = Math.round((Date.now() - startedAt) / 1000);
 
