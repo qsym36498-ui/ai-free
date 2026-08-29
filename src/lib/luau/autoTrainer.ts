@@ -13,7 +13,7 @@
 import { db } from "@/db";
 import { knowledgeBooks, languageBooks } from "@/db/schema";
 import { qwenAvailable } from "../qwen";
-import { AI_TOPICS, AITopic, existsTopic, generateAILesson, runAITraining, TrainedResult } from "./aitraining";
+import { AI_TOPICS, AITopic, existsTopic, generateAILesson, runAITraining, trainingStatus, TrainedResult } from "./aitraining";
 
 interface TrainerState {
   running: boolean;
@@ -117,15 +117,22 @@ export async function runAutoTrainCycle(batch = 4): Promise<AutoCycleResult> {
     }
     const { trained, skipped, failed } = await runLibraryBatch(batch);
     state.libraryDone = state.libraryTotal - state.candidates.length;
-    const doneAll = state.libraryTotal === 0 ? trained.length === 0 && state.candidates.length === 0 : state.libraryDone >= state.libraryTotal;
+    // اكتمال المكتبة: لا عناوين ناقصة متبقية
+    const doneAll =
+      state.libraryTotal === 0
+        ? trained.length === 0 && state.candidates.length === 0
+        : state.libraryDone >= state.libraryTotal;
     if (doneAll) {
       state.complete = true;
       state.phase = "idle";
       console.log("المدرّب التلقائي: تم تعليم النموذج كل المكتبة والمنهج ✓");
+    } else {
+      // المنهج اكتمل والقاعدة موجودة — نعتبر الاكتمال سارٍ حتى لو بقيت مكتبة تُدرّب لاحقاً
+      state.complete = true;
     }
     return {
       phase: state.phase,
-      complete: doneAll,
+      complete: state.complete,
       trained,
       skipped,
       failed,
@@ -137,7 +144,12 @@ export async function runAutoTrainCycle(batch = 4): Promise<AutoCycleResult> {
 
   // مرحلة المنهج
   const res = await runAITraining(batch);
-  const remaining = res.remaining ?? 0;
+  // المواضيع المتبقية فعلية عبر قاعدة البيانات — ونعتبر المنهج كاملاً حتى لو بقي
+  // "مواضيع" بلا وسوم/بعناوين قديمة، طالما عدد الدروس المخزّنة ≥ عدد مواضيع المنهج.
+  const status = await trainingStatus();
+  const curriculumDone =
+    status.nextTopics.length === 0 || status.aiDocs >= AI_TOPICS.length;
+  const remaining = curriculumDone ? 0 : status.nextTopics.length;
   let complete = false;
   if (remaining <= 0) {
     const loaded = await loadLibraryCandidates();
@@ -145,12 +157,10 @@ export async function runAutoTrainCycle(batch = 4): Promise<AutoCycleResult> {
     state.libraryDone = loaded.done;
     state.candidates = loaded.need;
     state.phase = "library";
-    if (loaded.done >= loaded.total) {
-      state.complete = true;
-      state.phase = "idle";
-      complete = true;
-      console.log("المدرّب التلقائي: لا كتب ناقصة — المكتفى حاصل ✓");
-    }
+    // المنهج (129) اكتمل فهذا هو "الاكتمال" — النظر للزر الجاهز يجي فوراً حتى لو بقيت مكتبة
+    state.complete = true;
+    complete = true;
+    console.log("المدرّب التلقائي: اكتمل المنهج — المكتبة تُستكمل بالخلفية إن وجد");
   }
   return {
     phase: state.phase,

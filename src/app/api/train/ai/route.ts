@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { qwenAvailable } from "@/lib/qwen";
-import { runAITraining, trainingStatus } from "@/lib/luau/aitraining";
+import { runAITraining, trainingStatus, AI_TOPICS } from "@/lib/luau/aitraining";
 import {
   autoTrainerStatus,
   autoTrainerScopeCount,
@@ -19,11 +19,17 @@ export async function GET() {
       autoTrainerScopeCount(),
       Promise.resolve(autoTrainerStatus()),
     ]);
+    // الاكتمال يُحسب فعلياً من قاعدة البيانات حتى لو المدرّب المحلي موقوف
+    // (TRAINER_SKIP_LOCAL): المنهج مكتمل إذا كفى التدريب، أو لا مواضيع ناقصة.
+    const curriculumComplete =
+      status.nextTopics.length === 0 || status.aiDocs >= AI_TOPICS.length;
+    const complete = curriculumComplete || auto.complete === true;
     return NextResponse.json({
       ok: true,
       enabled: qwenAvailable(),
       ...status,
       ...auto,
+      complete,
       curriculum: scope.curriculum,
     });
   } catch (error) {
