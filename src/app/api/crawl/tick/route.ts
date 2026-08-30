@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { crawledPages } from "@/db/schema";
 import { countTokens, extractReadableText } from "@/lib/luau/crawler";
+import { buildSearchText } from "@/lib/luau/text";
 import { enforceRateLimit } from "@/lib/rateLimit";
 
 export const dynamic = "force-dynamic";
@@ -51,7 +52,14 @@ export async function POST(request: Request) {
 
       await db
         .update(crawledPages)
-        .set({ status: "done", title, content, tokens, fetchedAt: new Date() })
+        .set({
+          status: "done",
+          title,
+          content,
+          tokens,
+          fetchedAt: new Date(),
+          searchText: buildSearchText(title, content, page.tags),
+        })
         .where(eq(crawledPages.id, page.id));
 
       return NextResponse.json({

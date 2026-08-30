@@ -5,11 +5,14 @@
  *
  * المكالمات كلها على الخادم — لا يشارك جهاز الزائر في هذا التدريب.
  */
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, like, or } from "drizzle-orm";
 import { db } from "@/db";
 import { knowledgeEntries } from "@/db/schema";
 import { qwenAvailable, qwenChat } from "../qwen";
-import { tokenize } from "./text";
+import { buildSearchText, tokenize } from "./text";
+import { EXTENDED_TOPICS } from "./curriculum-ext";
+// يُعاد تصديره من مركز المنهج (aitraining) ليستورده autoTrainer من مكان واحد
+export { EXTENDED_TOPICS };
 
 export interface AITopic {
   topic: string; // المعرّف والعنوان — أيضاً مفتاح منع التكرار
@@ -176,13 +179,24 @@ const CRAFT_TOPICS: AITopic[] = [
   { topic: "عادة التعلم الذاتي للمبرمج", kind: "lesson", level: "مبتدئ", focus: "كيف يبحث عن إجابات، يقرأ الكود الجاهز، ويتدرب يومياً" },
 ];
 
-export const AI_TOPICS: AITopic[] = [
+/**
+ * المنهج الأساسي — الـ129 موضوعاً التي تمثّل «بوابة الاكتمال»: عند تغطيتها
+ * يظهر زر «جرّب النموذج بدون Qwen» وشريط التقدّم يُقاس عليها. لا تُضخّم هذه
+ * القائمة؛ أضِف الجديد إلى المنهج الموسّع ([[curriculum-ext]]) بدلاً من ذلك.
+ */
+export const CORE_TOPICS: AITopic[] = [
   ...LUA_TOPICS,
   ...PYTHON_TOPICS,
   ...JS_TOPICS,
   ...CPP_TOPICS,
   ...CRAFT_TOPICS,
 ];
+
+/**
+ * كل نطاق التدريب: الأساسي أولاً (يمرّ عليه المدرّب بالترتيب) ثم المنهج الموسّع
+ * الذي يُدرَّب بالخلفية. `assertNoDupes` يضمن تفرّد كل اسم موضوع عبر القائمتين.
+ */
+export const AI_TOPICS: AITopic[] = [...CORE_TOPICS, ...EXTENDED_TOPICS];
 
 assertNoDupes(AI_TOPICS);
 
@@ -213,19 +227,24 @@ function topicMatches(topic: string, title: string): boolean {
   return title.includes(topic) || topic.includes(title);
 }
 
-/** هل درس هذا الموضوع موجود من قبل؟ (بوسم الموضوع، أو بمطابقة العنوان) */
+/** هل درس هذا الموضوع موجود من قبل؟ (بوسم الموضوع، أو بمطابقة العنوان) — استعلام واحد مفهرس */
 export async function existsTopic(topic: string): Promise<boolean> {
   try {
     const marker = "تدريب:" + topic;
     const rows = await db
-      .select({ title: knowledgeEntries.title, tags: knowledgeEntries.tags })
+      .select({ id: knowledgeEntries.id })
       .from(knowledgeEntries)
-      .where(eq(knowledgeEntries.authorName, "تدريب Qwen"))
-      .limit(4000);
-    for (const row of rows) {
-      if (row.tags.includes(marker) || topicMatches(topic, row.title)) return true;
-    }
-    return false;
+      .where(
+        and(
+          eq(knowledgeEntries.authorName, "تدريب Qwen"),
+          or(
+            like(knowledgeEntries.tags, "%" + marker + "%"),
+            like(knowledgeEntries.title, "%" + topic + "%")
+          )
+        )
+      )
+      .limit(1);
+    return rows.length > 0;
   } catch {
     return false;
   }
@@ -324,6 +343,7 @@ export async function generateAILesson(topic: AITopic): Promise<TrainedResult> {
       tags: tags.slice(0, 400),
       sourceType: "درس",
       authorName: "تدريب Qwen",
+      searchText: buildSearchText(title, content, code, tags),
     });
     const tokens = tokenize(title + " " + content + " " + (code ?? "")).length;
     return { status: "trained", topic: topic.topic, title, tokens };
@@ -370,6 +390,8 @@ export async function runAITraining(batch = 3, onlyTopic?: string): Promise<{
 export async function trainingStatus(): Promise<{
   aiDocs: number;
   totalTopics: number;
+  coreTopics: number;
+  coreComplete: boolean;
   lastTrainedAt: string | null;
   nextTopics: string[];
 }> {
@@ -378,7 +400,7 @@ export async function trainingStatus(): Promise<{
     .from(knowledgeEntries)
     .where(eq(knowledgeEntries.authorName, "تدريب Qwen"))
     .orderBy(desc(knowledgeEntries.createdAt))
-    .limit(4000);
+    .limit(8000);
 
   // المواضيع المنجزة: بتوسم "تدريب:اسم-الموضوع" أو بمطابقة العنوان
   const trainedTopics = new Set<string>();
@@ -391,9 +413,15 @@ export async function trainingStatus(): Promise<{
   }
   const nextTopics = AI_TOPICS.filter((t) => !trainedTopics.has(t.topic)).map((t) => t.topic).slice(0, 5);
 
+  // اكتمال المنهج الأساسي (بوابة الزر): لا مواضيع أساسية ناقصة، أو عدد الدروس بلغ حجم الأساسي.
+  const coreMissing = CORE_TOPICS.filter((t) => !trainedTopics.has(t.topic)).length;
+  const coreComplete = coreMissing === 0 || rows.length >= CORE_TOPICS.length;
+
   return {
     aiDocs: rows.length,
     totalTopics: AI_TOPICS.length,
+    coreTopics: CORE_TOPICS.length,
+    coreComplete,
     lastTrainedAt: rows[0]?.createdAt?.toISOString?.() ?? null,
     nextTopics,
   };

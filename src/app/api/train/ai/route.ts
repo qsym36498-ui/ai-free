@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { qwenAvailable } from "@/lib/qwen";
-import { runAITraining, trainingStatus, AI_TOPICS } from "@/lib/luau/aitraining";
+import { runAITraining, trainingStatus } from "@/lib/luau/aitraining";
 import {
   autoTrainerStatus,
   autoTrainerScopeCount,
@@ -19,11 +19,10 @@ export async function GET() {
       autoTrainerScopeCount(),
       Promise.resolve(autoTrainerStatus()),
     ]);
-    // الاكتمال يُحسب فعلياً من قاعدة البيانات حتى لو المدرّب المحلي موقوف
-    // (TRAINER_SKIP_LOCAL): المنهج مكتمل إذا كفى التدريب، أو لا مواضيع ناقصة.
-    const curriculumComplete =
-      status.nextTopics.length === 0 || status.aiDocs >= AI_TOPICS.length;
-    const complete = curriculumComplete || auto.complete === true;
+    // بوابة الزر تعتمد على اكتمال المنهج الأساسي فقط (coreComplete) — يُحسب فعلياً من
+    // قاعدة البيانات حتى لو المدرّب المحلي موقوف (TRAINER_SKIP_LOCAL). المنهج الموسّع
+    // يُدرَّب بالخلفية ولا يؤخّر ظهور الزر.
+    const complete = status.coreComplete || auto.complete === true;
     return NextResponse.json({
       ok: true,
       enabled: qwenAvailable(),
@@ -31,6 +30,7 @@ export async function GET() {
       ...auto,
       complete,
       curriculum: scope.curriculum,
+      extended: scope.extended,
     });
   } catch (error) {
     console.error("train/ai GET error", error);

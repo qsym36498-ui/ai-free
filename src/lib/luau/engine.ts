@@ -3,7 +3,7 @@
  * مكتوب يدوياً بالكامل: كشف نوايا + بحث BM25 + دمج معرفة اللاعبين من قاعدة البيانات.
  */
 import { desc, eq } from "drizzle-orm";
-import { db } from "@/db";
+import { db, pool } from "@/db";
 import { crawledPages, knowledgeEntries, languageBooks } from "@/db/schema";
 import { bookToSearchDocs, fetchKnowledgeBooks } from "./langbooks";
 import { BUILTIN_DOCS, docToTrainingText } from "./corpus";
@@ -26,6 +26,80 @@ function builtinToSearchDoc(doc: KnowledgeDoc): SearchDoc {
   };
 }
 
+/** صفوف قاعدة البيانات التي تتحول إلى وثائق بحث — يشترك فيها drizzle وبحث pg الخام */
+interface UserRow {
+  id: number;
+  title: string;
+  content: string;
+  code: string | null;
+  tags: string;
+  sourceUrl: string | null;
+  sourceType: string;
+  authorName: string;
+  verified: boolean;
+  confirmCount: number;
+  disputeCount: number;
+}
+
+interface CrawledRow {
+  id: number;
+  url: string;
+  origin: string;
+  tags: string;
+  title: string;
+  content: string;
+}
+
+/** تقطيع نص صفحة مزحوفة إلى فقرات ~700 حرف قابلة للبحث */
+function chunkCrawledContent(content: string): string[] {
+  const paragraphs: string[] = [];
+  const chunks = content.split(/\n+/);
+  let current = "";
+  for (const chunk of chunks) {
+    if ((current + chunk).length > 700) {
+      if (current) paragraphs.push(current.trim());
+      current = chunk;
+    } else {
+      current += " " + chunk;
+    }
+  }
+  if (current.trim()) paragraphs.push(current.trim());
+  return paragraphs;
+}
+
+/** صف صفحة مزحوفة → وثيقة بحث (يُستخدم من drizzle ومن مرشّحي FTS معاً) */
+function crawledRowToDoc(row: CrawledRow): SearchDoc {
+  const paragraphs = chunkCrawledContent(row.content);
+  return {
+    id: `crawled-${row.id}`,
+    source: "crawled",
+    title: row.title || row.origin,
+    tags: row.tags.split(",").map((t) => t.trim()).filter(Boolean),
+    paragraphs: paragraphs.length > 0 ? paragraphs : [row.content.slice(0, 700)],
+    sourceUrl: row.url,
+    authorName: row.origin,
+  };
+}
+
+/** صف معرفة لاعب/درس → وثيقة بحث (يُستخدم من drizzle ومن مرشّحي FTS معاً) */
+function userRowToDoc(row: UserRow): SearchDoc {
+  return {
+    id: `user-${row.id}`,
+    entryId: row.id,
+    source: "user",
+    title: row.title,
+    tags: row.tags.split(",").map((t) => t.trim()).filter(Boolean),
+    paragraphs: [row.content],
+    code: row.code ?? undefined,
+    authorName: row.authorName,
+    sourceUrl: row.sourceUrl ?? undefined,
+    sourceType: row.sourceType,
+    verified: row.verified,
+    confirmCount: row.confirmCount,
+    disputeCount: row.disputeCount,
+  };
+}
+
 /** صفحات قرأها الزاحف الذاتي من كتب ومواقع مجانية */
 async function fetchCrawledDocs(): Promise<SearchDoc[]> {
   try {
@@ -35,32 +109,7 @@ async function fetchCrawledDocs(): Promise<SearchDoc[]> {
       .where(eq(crawledPages.status, "done"))
       .orderBy(desc(crawledPages.id))
       .limit(150);
-    return rows
-      .filter((row) => row.content.length > 0)
-      .map((row) => {
-        const paragraphs: string[] = [];
-        const chunks = row.content.split(/\n+/);
-        let current = "";
-        for (const chunk of chunks) {
-          if ((current + chunk).length > 700) {
-            if (current) paragraphs.push(current.trim());
-            current = chunk;
-          } else {
-            current += " " + chunk;
-          }
-        }
-        if (current.trim()) paragraphs.push(current.trim());
-
-        return {
-          id: `crawled-${row.id}`,
-          source: "crawled" as const,
-          title: row.title || row.origin,
-          tags: row.tags.split(",").map((t) => t.trim()).filter(Boolean),
-          paragraphs: paragraphs.length > 0 ? paragraphs : [row.content.slice(0, 700)],
-          sourceUrl: row.url,
-          authorName: row.origin,
-        };
-      });
+    return rows.filter((row) => row.content.length > 0).map(crawledRowToDoc);
   } catch {
     return [];
   }
@@ -73,22 +122,7 @@ async function fetchUserDocs(): Promise<SearchDoc[]> {
       .from(knowledgeEntries)
       .orderBy(desc(knowledgeEntries.createdAt))
       .limit(400);
-
-    return rows.map((row) => ({
-      id: `user-${row.id}`,
-      entryId: row.id,
-      source: "user" as const,
-      title: row.title,
-      tags: row.tags.split(",").map((t) => t.trim()).filter(Boolean),
-      paragraphs: [row.content],
-      code: row.code ?? undefined,
-      authorName: row.authorName,
-      sourceUrl: row.sourceUrl ?? undefined,
-      sourceType: row.sourceType,
-      verified: row.verified,
-      confirmCount: row.confirmCount,
-      disputeCount: row.disputeCount,
-    }));
+    return rows.map(userRowToDoc);
   } catch {
     // الجدول غير موجود بعد أو لا اتصال — نكمل بالمعرفة المدمجة فقط
     return [];
@@ -435,8 +469,65 @@ function generatorAnswer(template: CodeTemplate): EngineAnswer {
 }
 
 /** فهرس موحد مخزّن مؤقتاً (كتب ضخمة + كل المصادر) — يعاد بناؤه كل دقيقة */
-let unifiedCache: { at: number; index: LuauSearchIndex; docCount: number } | null = null;
+let unifiedCache: {
+  at: number;
+  index: LuauSearchIndex;
+  docCount: number;
+  baseIds: Set<string>;
+} | null = null;
 const INDEX_TTL = 60_000;
+
+/**
+ * يبني نص tsquery آمناً من توكنات السؤال (مطبّعة/مجذوعة بنفس خط `search_text`).
+ * كل توكن يُقيَّد بحروف عربية/لاتينية/أرقام فقط ثم يُلحق به `:*` للمطابقة بالبادئة،
+ * وتُوصل التوكنات بـ OR لرفع الاسترجاع. يعيد "" إن لم يبقَ توكن صالح.
+ */
+function ftsQueryString(query: string): string {
+  const safe = contentTokens(query).filter((t) => /^[a-z0-9ء-ي_]+$/.test(t));
+  const uniq = Array.from(new Set(safe)).slice(0, 20);
+  return uniq.map((t) => t + ":*").join(" | ");
+}
+
+/**
+ * مرشّحو بحث Postgres النصي (FTS) فوق كامل الجدولين — يتجاوز سقف الـ400 بجلب
+ * أفضل المطابقات حسب `ts_rank_cd`. أي خطأ (عمود `search_text` غير مُهاجَر بعد،
+ * أو لا اتصال) → مصفوفة فارغة، فيرجع البحث للنتائج الأساسية دون أي تراجع.
+ */
+async function ftsCandidates(query: string): Promise<SearchDoc[]> {
+  const tsq = ftsQueryString(query);
+  if (!tsq) return [];
+  try {
+    const [knowledge, crawled] = await Promise.all([
+      pool.query<UserRow>(
+        `SELECT id, title, content, code, tags,
+                source_url AS "sourceUrl", source_type AS "sourceType",
+                author_name AS "authorName", verified,
+                confirm_count AS "confirmCount", dispute_count AS "disputeCount"
+           FROM knowledge_entries
+          WHERE to_tsvector('simple', coalesce(search_text, '')) @@ to_tsquery('simple', $1)
+          ORDER BY ts_rank_cd(to_tsvector('simple', coalesce(search_text, '')), to_tsquery('simple', $1)) DESC
+          LIMIT 60`,
+        [tsq]
+      ),
+      pool.query<CrawledRow>(
+        `SELECT id, url, origin, tags, title, content
+           FROM crawled_pages
+          WHERE status = 'done'
+            AND to_tsvector('simple', coalesce(search_text, '')) @@ to_tsquery('simple', $1)
+          ORDER BY ts_rank_cd(to_tsvector('simple', coalesce(search_text, '')), to_tsquery('simple', $1)) DESC
+          LIMIT 30`,
+        [tsq]
+      ),
+    ]);
+    return [
+      ...knowledge.rows.map(userRowToDoc),
+      ...crawled.rows.map(crawledRowToDoc),
+    ];
+  } catch {
+    // العمود غير مُهاجَر بعد أو تعذّر الاتصال — لا مرشّحين، والأساس يكفي
+    return [];
+  }
+}
 
 async function unifiedSearch(query: string): Promise<ScoredDoc[]> {
   const now = Date.now();
@@ -457,9 +548,36 @@ async function unifiedSearch(query: string): Promise<ScoredDoc[]> {
       ...crawledDocs,
       ...bookDocs,
     ];
-    unifiedCache = { at: now, index: buildSearchIndex(allDocs), docCount: allDocs.length };
+    unifiedCache = {
+      at: now,
+      index: buildSearchIndex(allDocs),
+      docCount: allDocs.length,
+      baseIds: new Set(allDocs.map((d) => d.id)),
+    };
   }
-  return unifiedCache.index.search(query, 8);
+  const cache = unifiedCache;
+
+  // 1) نتائج أساسية من الفهرس الثقيل المخزّن (مدمجة + آخر 400 + زاحف + كتب مقطّعة).
+  const baseResults = cache.index.search(query, 8);
+
+  // 2) مرشّحون من بحث Postgres النصي فوق كامل الجدولين — يكشف ما يتجاوز سقف الـ400.
+  const ftsDocs = await ftsCandidates(query);
+  const newDocs = ftsDocs.filter((d) => !cache.baseIds.has(d.id));
+
+  // لا مرشّح جديد (أو تعطّل/فشل FTS) → النتائج الأساسية كما هي، مطابقة لسلوك اليوم.
+  if (newDocs.length === 0) return baseResults;
+
+  // 3) إعادة ترتيب اتحاد صغير: وثائق النتائج الأساسية + الجديدة، عبر فهرس BM25 طازج
+  //    (لا نعيد بناء الفهرس الثقيل — الكتب قد تبلغ مئات المقاطع لكل كتاب).
+  const unionDocs: SearchDoc[] = [];
+  const seen = new Set<string>();
+  for (const doc of [...baseResults.map((r) => r.doc), ...newDocs]) {
+    if (seen.has(doc.id)) continue;
+    seen.add(doc.id);
+    unionDocs.push(doc);
+  }
+  const reranked = buildSearchIndex(unionDocs).search(query, 8);
+  return reranked.length > 0 ? reranked : baseResults;
 }
 
 async function knowledgeAnswer(trimmed: string, offline = false): Promise<EngineAnswer> {

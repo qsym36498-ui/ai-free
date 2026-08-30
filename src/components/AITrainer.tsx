@@ -8,6 +8,9 @@ type TStatus = {
   aiDocs: number;
   curriculum: number;
   totalTopics: number;
+  coreTopics?: number;
+  coreComplete?: boolean;
+  extended?: number;
   lastTrainedAt: string | null;
   nextTopics: string[];
   phase?: "curriculum" | "library" | "idle";
@@ -123,9 +126,13 @@ export default function AITrainer() {
   const running = status?.running === true;
   const done = status?.aiDocs ?? 0;
   const cur = status?.curriculum ?? status?.totalTopics ?? 0;
+  const extended = status?.extended ?? 0;
   const libTotal = status?.libraryTotal ?? 0;
   const libDone = status?.libraryDone ?? 0;
-  const percent = cur > 0 ? Math.round((done / cur) * 100) : 0;
+  // شريط التقدّم على المنهج الأساسي فقط (بوابة الزر) — يُقصّ عند 100% لأن `done`
+  // يشمل دروس المنهج الموسّع والمكتبة أيضاً فيتجاوز حجم الأساسي.
+  const coreDone = Math.min(done, cur);
+  const percent = cur > 0 ? Math.min(100, Math.round((coreDone / cur) * 100)) : 0;
 
   return (
     <div className="rounded-xl border border-mint/30 bg-panel p-6">
@@ -150,7 +157,7 @@ export default function AITrainer() {
           <div className="mb-4 grid grid-cols-1 gap-3 text-center sm:grid-cols-3">
             <div className="rounded-lg border border-linesoft bg-panel2 p-3">
               <p className="font-mono text-lg font-bold text-mint">
-                {done}/{cur}
+                {coreDone}/{cur}
               </p>
               <p className="text-[11px] text-dim">درس مدرب من المنهج</p>
             </div>
@@ -165,6 +172,18 @@ export default function AITrainer() {
               <p className="text-[11px] text-dim">آخر تدريب</p>
             </div>
           </div>
+
+          {(extended > 0 || done > cur) && (
+            <div className="mb-4 rounded-lg border border-linesoft bg-panel2 px-3 py-2 text-xs leading-6 text-dim">
+              إجمالي الدروس المدرّبة: <span className="font-mono text-mint">{done}</span>
+              {extended > 0 && (
+                <>
+                  {" · "}المنهج الموسّع: <span className="font-mono text-fog">{extended}</span> موضوع إضافي
+                  يُدرَّب بالخلفية
+                </>
+              )}
+            </div>
+          )}
 
           {libTotal > 0 && (
             <div className="mb-4 rounded-lg border border-linesoft bg-panel2 px-3 py-2 text-xs leading-6 text-dim">

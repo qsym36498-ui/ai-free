@@ -6,6 +6,7 @@ import { codeTokens, contentTokens, expandWithStems, tokenize } from "./text";
 
 export interface SearchDoc {
   id: string;
+  entryId?: number; // مفتاح صف knowledge_entries لوثائق اللاعبين (يُحمل بنيوياً، اختياري)
   source: "builtin" | "user" | "crawled" | "book";
   title: string;
   level?: string;

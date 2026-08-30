@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { crawledPages } from "@/db/schema";
 import { countTokens, extractReadableText } from "./crawler";
-import { tokenize } from "./text";
+import { buildSearchText, tokenize } from "./text";
 
 export interface LearnedItem {
   title: string;
@@ -49,6 +49,7 @@ async function saveLearned(
       status: "done",
       tokens,
       fetchedAt: new Date(),
+      searchText: buildSearchText(title, content, tags),
     })
     .onConflictDoNothing({ target: crawledPages.url })
     .returning({ id: crawledPages.id });

@@ -25,6 +25,8 @@ export const knowledgeEntries = pgTable("knowledge_entries", {
   disputeCount: integer("dispute_count").notNull().default(0),
   usageCount: integer("usage_count").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  // نص مطبّع/مجذوع للبحث النصي في Postgres (GIN + to_tsvector) — يرفع سقف الاسترجاع
+  searchText: text("search_text").notNull().default(""),
 });
 
 /** أصوات التأكيد والنقض على المعرفة — صوت واحد لكل جهاز على كل معلومة */
@@ -86,6 +88,8 @@ export const crawledPages = pgTable("crawled_pages", {
   tokens: integer("tokens").notNull().default(0),
   status: text("status").notNull().default("pending"), // pending | reading | done | failed
   fetchedAt: timestamp("fetched_at"),
+  // نص مطبّع/مجذوع للبحث النصي في Postgres (GIN + to_tsvector)
+  searchText: text("search_text").notNull().default(""),
 });
 
 /** مساهمات التدريب الفردية من أجهزة الزوار */

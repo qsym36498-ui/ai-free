@@ -13,7 +13,7 @@
 import { db } from "@/db";
 import { knowledgeBooks, languageBooks } from "@/db/schema";
 import { qwenAvailable } from "../qwen";
-import { AI_TOPICS, AITopic, existsTopic, generateAILesson, runAITraining, trainingStatus, TrainedResult } from "./aitraining";
+import { AI_TOPICS, AITopic, CORE_TOPICS, EXTENDED_TOPICS, existsTopic, generateAILesson, runAITraining, trainingStatus, TrainedResult } from "./aitraining";
 
 interface TrainerState {
   running: boolean;
@@ -74,9 +74,9 @@ export function autoTrainerStatus(): {
   };
 }
 
-/** كل المواضيع (المنهج + عناوين المكتبة) للعرض في الواجهة */
-export async function autoTrainerScopeCount(): Promise<{ curriculum: number }> {
-  return { curriculum: AI_TOPICS.length };
+/** أحجام نطاق التدريب للعرض: الأساسي (بوابة الزر) والموسّع (خلفية) */
+export async function autoTrainerScopeCount(): Promise<{ curriculum: number; extended: number }> {
+  return { curriculum: CORE_TOPICS.length, extended: EXTENDED_TOPICS.length };
 }
 
 export interface AutoCycleResult {
@@ -142,25 +142,28 @@ export async function runAutoTrainCycle(batch = 4): Promise<AutoCycleResult> {
     };
   }
 
-  // مرحلة المنهج
+  // مرحلة المنهج (الأساسي أولاً ثم الموسّع — runAITraining يمرّ على AI_TOPICS بالترتيب)
   const res = await runAITraining(batch);
-  // المواضيع المتبقية فعلية عبر قاعدة البيانات — ونعتبر المنهج كاملاً حتى لو بقي
-  // "مواضيع" بلا وسوم/بعناوين قديمة، طالما عدد الدروس المخزّنة ≥ عدد مواضيع المنهج.
   const status = await trainingStatus();
+
+  // بوابة الزر تعتمد على المنهج الأساسي فقط: تظهر مبكراً ولو بقي الموسّع يُدرَّب بالخلفية.
+  if (status.coreComplete) state.complete = true;
+
+  // التحوّل لمرحلة المكتبة لا يحصل إلا بعد تغطية كل المنهج (الأساسي + الموسّع)،
+  // حتى لا تُهمَل مواضيع المنهج الموسّع.
   const curriculumDone =
     status.nextTopics.length === 0 || status.aiDocs >= AI_TOPICS.length;
   const remaining = curriculumDone ? 0 : status.nextTopics.length;
-  let complete = false;
-  if (remaining <= 0) {
+  let complete = state.complete;
+  if (curriculumDone) {
     const loaded = await loadLibraryCandidates();
     state.libraryTotal = loaded.total;
     state.libraryDone = loaded.done;
     state.candidates = loaded.need;
     state.phase = "library";
-    // المنهج (129) اكتمل فهذا هو "الاكتمال" — النظر للزر الجاهز يجي فوراً حتى لو بقيت مكتبة
     state.complete = true;
     complete = true;
-    console.log("المدرّب التلقائي: اكتمل المنهج — المكتبة تُستكمل بالخلفية إن وجد");
+    console.log("المدرّب التلقائي: اكتمل المنهج كاملاً — المكتبة تُستكمل بالخلفية إن وجد");
   }
   return {
     phase: state.phase,

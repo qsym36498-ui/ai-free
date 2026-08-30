@@ -2,6 +2,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { knowledgeEntries, knowledgeVotes } from "@/db/schema";
+import { buildSearchText } from "@/lib/luau/text";
 import { enforceRateLimit } from "@/lib/rateLimit";
 
 export const dynamic = "force-dynamic";
@@ -87,6 +88,7 @@ export async function POST(request: Request) {
         sourceUrl: sourceUrl || null,
         sourceType,
         authorName: authorName || "زائر",
+        searchText: buildSearchText(title, content, code, tags),
       })
       .returning();
 

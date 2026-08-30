@@ -33,11 +33,18 @@ npm install
 #   QWEN_ENABLED=true
 #   QWEN_API_KEY=sk-...
 
-npm run db:push   # إنشاء الجداول (الإعدادات تقرأ من .env.local)
-npm run dev       # http://localhost:3000
+npm run db:push          # إنشاء الجداول (الإعدادات تقرأ من .env.local)
+npx tsx scripts/setup-fts.ts   # فهرس بحث Postgres النصي (GIN) + تعبئة search_text للصفوف القديمة
+npm run dev              # http://localhost:3000
 ```
 
 للتحقق من الكود بدون تشغيل: `npm run typecheck` و `npm run lint`.
+
+> **البحث النصي (FTS):** يرفع سقف الاسترجاع فوق آخر 400 مدخل — يجلب المرشّحين من كامل
+> الجدولين حسب `ts_rank_cd` ثم يعيد ترتيبهم بمحرك BM25. البحث يعمل حتى قبل تشغيل السكربت
+> (يرجع تلقائياً للمسار القديم)، لكن `setup-fts.ts` يضيف فهرس GIN للسرعة ويعبّئ العمود
+> للبيانات القديمة. **أعد تشغيله بعد أي `npm run db:push`** — فهو `--force` وقد يُسقط فهرساً
+> لا يعرفه drizzle. السكربت عديم-التأثير وقابل لإعادة التشغيل بأمان.
 
 > **التدريب السحابي:** إذا كان الـ cron يعمل من GitHub، اجعل `TRAINER_SKIP_LOCAL=true`
 > في `.env.local` حتى لا يدرّب جهازك دروساً مكررة.
@@ -49,7 +56,7 @@ src/app          الصفحات ونقاط الـ API
 src/components   واجهات React
 src/lib/luau     المحرك: البحث، النصوص، الدروس، القوالب، الزاحف، المدرب الآلي
 src/db           جداول Drizzle
-scripts/         أدوات مستقلة (أهمها train-cron.ts للتدريب السحابي)
+scripts/         أدوات مستقلة (train-cron.ts للتدريب السحابي، setup-fts.ts لفهرس البحث النصي)
 .github/workflows  جدولة التدريب
 ```
 

@@ -103,6 +103,18 @@ export function contentTokens(input: string): string[] {
   return expandWithStems(base);
 }
 
+/**
+ * نص بحث مطبّع ومجذوع يُخزَّن في عمود `search_text` لجداول قاعدة البيانات.
+ * يجمع كل الأجزاء (عنوان/محتوى/كود/وسوم) ويمررها على نفس خط المعالجة الذي
+ * يستخدمه الاستعلام (`contentTokens`)، فيتطابق ما هو مفهرس مع صيغة السؤال في
+ * بحث Postgres النصي (to_tsvector/to_tsquery). يعيد سلسلة توكنات مفصولة بمسافات.
+ */
+export function buildSearchText(...parts: Array<string | null | undefined>): string {
+  const joined = parts.filter((p): p is string => typeof p === "string" && p.length > 0).join(" ");
+  if (!joined.trim()) return "";
+  return contentTokens(joined).join(" ");
+}
+
 /** تقسيم بسيط لسطور الكود إلى عبارات قابلة للبحث */
 export function codeTokens(code: string): string[] {
   const noStrings = code.replace(/"(?:[^"\\]|\\.)*"/g, " ");
