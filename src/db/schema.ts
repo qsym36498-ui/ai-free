@@ -87,6 +87,7 @@ export const crawledPages = pgTable("crawled_pages", {
   content: text("content").notNull().default(""),
   tokens: integer("tokens").notNull().default(0),
   status: text("status").notNull().default("pending"), // pending | reading | done | failed
+  crawlAttempts: integer("crawl_attempts").notNull().default(0),
   fetchedAt: timestamp("fetched_at"),
   // نص مطبّع/مجذوع للبحث النصي في Postgres (GIN + to_tsvector)
   searchText: text("search_text").notNull().default(""),

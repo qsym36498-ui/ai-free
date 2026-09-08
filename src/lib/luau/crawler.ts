@@ -131,7 +131,81 @@ export const CRAWL_QUEUE: QueueItem[] = [
     origin: "منصة — ويكيبيديا العربية: روبلوكس",
     tags: "روبلوكس,لعبه,منصه,عربي",
   },
+  {
+    url: "https://www.lua.org/pil/4.html",
+    origin: "كتاب مجاني — Programming in Lua الفصل 4 (العبارات)",
+    tags: "عبارات,حلقات,شروط,لتكرار,اساسيات",
+  },
+  {
+    url: "https://www.lua.org/pil/14.html",
+    origin: "كتاب مجاني — Programming in Lua الفصل 14 (البيئة والمتغيرات)",
+    tags: "بيئه,متغيرات,عامة,محلية,نطاق",
+  },
+  {
+    url: "https://www.lua.org/pil/15.html",
+    origin: "كتاب مجاني — Programming in Lua الفصل 15 (الحزم والوحدات)",
+    tags: "وحدات,حزم,مكتبات,منطقه,متقدم",
+  },
+  {
+    url: "https://www.lua.org/pil/17.html",
+    origin: "كتاب مجاني — Programming in Lua الفصل 17 (الجداول الضعيفة)",
+    tags: "جداول ضعيفة,كاش,تسريبات,ذاكره,متقدم",
+  },
+  {
+    url: "https://www.lua.org/pil/18.html",
+    origin: "كتاب مجاني — Programming in Lua الفصل 18",
+    tags: "ميباتيبل,تقدم,كائنات,لوا,متقدم",
+  },
+  {
+    url: "https://www.lua.org/pil/19.html",
+    origin: "كتاب مجاني — Programming in Lua الفصل 19",
+    tags: "لوا,اوبجيكت,كائنات,متقدم",
+  },
+  {
+    url: "https://www.lua.org/pil/20.html",
+    origin: "كتاب مجاني — Programming in Lua الفصل 20 (المكتبات القياسية)",
+    tags: "مكتبات,ستاندرد,نصوص,جداول,ايوايو",
+  },
+  {
+    url: "https://www.lua.org/pil/21.html",
+    origin: "كتاب مجاني — Programming in Lua الفصل 21",
+    tags: "لوا,مكتبات,بيت,رقم,منطقي",
+  },
+  {
+    url: "https://www.lua.org/pil/22.html",
+    origin: "كتاب مجاني — Programming in Lua الفصل 22",
+    tags: "لوا,ايوايو,مكتبات,بيت",
+  },
+  {
+    url: "https://www.lua.org/pil/23.html",
+    origin: "كتاب مجاني — Programming in Lua الفصل 23",
+    tags: "لوا,متقدم,دوال,تقدم",
+  },
+  {
+    url: "https://www.lua.org/pil/24.html",
+    origin: "كتاب مجاني — Programming in Lua الفصل 24",
+    tags: "لوا,متقدم,سي,تطبيقات",
+  },
+  {
+    url: "https://www.lua.org/pil/25.html",
+    origin: "كتاب مجاني — Programming in Lua الفصل 25",
+    tags: "لوا,متقدم,سي,تطبيقات",
+  },
+  {
+    url: "https://luau.org/library",
+    origin: "منصة — مرجع مكتبات لواو القياسية",
+    tags: "لواو,مكتبات,دوال,نصوص,جداول,ايوايو",
+  },
 ];
+
+/** حد إعادة المحاولة للصفحات الفاشلة — بعدها تسكن نهائياً */
+export const CRAWL_MAX_ATTEMPTS = 3;
+
+/** صفحة بحالة reading منذ أكثر من هذا يُفترض أن طلبها مات — تُلتقط من جديد */
+export const CRAWL_STALE_READING_SECONDS = 5 * 60;
+
+/** فاصل إعادة محاولة الصفحات الفاشلة (التوفي عن الموقع الخامل المؤقت) */
+export const CRAWL_FAILED_COOLDOWN_SECONDS = 10 * 60;
 
 /** استخراج النص المقروء من صفحة HTML يدوياً: حذف سكريبت وستايل ثم تقشير الوسوم */
 export function extractReadableText(html: string): { title: string; text: string } {

@@ -1,28 +1,15 @@
-import { asc, count, sql } from "drizzle-orm";
+import { asc, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { crawledPages } from "@/db/schema";
-import { CRAWL_QUEUE } from "@/lib/luau/crawler";
+import { seedCrawlQueue } from "@/lib/luau/crawler-runner";
 
 export const dynamic = "force-dynamic";
 
-/** يبذر طابور القراءة إذا كان فارغاً */
-async function seedQueue() {
-  const [row] = await db.select({ n: count() }).from(crawledPages);
-  if ((row?.n ?? 0) > 0) return;
-  await db.insert(crawledPages).values(
-    CRAWL_QUEUE.map((item) => ({
-      url: item.url,
-      origin: item.origin,
-      tags: item.tags,
-    }))
-  );
-}
-
-/** حالة الزاحف الذاتي: الطابور وما تمت قراءته */
+/** حالة الزاحف الذاتي: يضيف الروابط الجديدة للطابور ثم يقرأ حالته */
 export async function GET() {
   try {
-    await seedQueue();
+    await seedCrawlQueue();
     const pages = await db.select().from(crawledPages).orderBy(asc(crawledPages.id));
     const [totals] = await db
       .select({
