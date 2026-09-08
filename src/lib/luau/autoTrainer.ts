@@ -10,7 +10,7 @@
  *  - حلقة داخلية في الخادم المحلي (tick كل 30 ثانية)، أو
  *  - سكربت مستقل على GitHub Actions (مزامنة سحابية بدون سيرفر).
  */
-import { db } from "@/db";
+import { db, pingDatabase } from "@/db";
 import { knowledgeBooks, languageBooks } from "@/db/schema";
 import { qwenAvailable } from "../qwen";
 import { AI_TOPICS, AITopic, CORE_TOPICS, EXTENDED_TOPICS, existsTopic, generateAILesson, runAITraining, trainingStatus, TrainedResult } from "./aitraining";
@@ -108,6 +108,9 @@ export async function runAutoTrainCycle(batch = 4): Promise<AutoCycleResult> {
     };
   }
 
+  // الإيقاظ: قاعدة Serverless نامت (Scale-to-Zero) — أول اتصال يمتص الـ Cold Start
+  await pingDatabase();
+
   if (state.phase === "library") {
     if (state.candidates.length === 0) {
       const loaded = await loadLibraryCandidates();
@@ -144,7 +147,21 @@ export async function runAutoTrainCycle(batch = 4): Promise<AutoCycleResult> {
 
   // مرحلة المنهج (الأساسي أولاً ثم الموسّع — runAITraining يمرّ على AI_TOPICS بالترتيب)
   const res = await runAITraining(batch);
-  const status = await trainingStatus();
+  let status: ReturnType<typeof trainingStatus> extends Promise<infer R> ? R : never;
+  try {
+    status = await trainingStatus();
+  } catch (error) {
+    // حماية من قطيعة مؤقتة: نكمل بحالة آمنة ولا نقطع دورة التدريب
+    console.error("auto trainer: trainingStatus فشل مؤقتاً — نكمل", error);
+    status = {
+      aiDocs: 0,
+      totalTopics: AI_TOPICS.length,
+      coreTopics: CORE_TOPICS.length,
+      coreComplete: false,
+      lastTrainedAt: null,
+      nextTopics: [],
+    };
+  }
 
   // بوابة الزر تعتمد على المنهج الأساسي فقط: تظهر مبكراً ولو بقي الموسّع يُدرَّب بالخلفية.
   if (status.coreComplete) state.complete = true;

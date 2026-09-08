@@ -122,9 +122,14 @@ export default function AITrainer() {
   }
 
   const complete = status?.complete === true;
+  const done = status?.aiDocs ?? 0;
+  // كل المواضيع (الأساسية + الموسّعة) اكتملت فعلياً عند وصول aiDocs للمجموع الكلي.
+  // "complete" يتحقق بمجرد انتهاء الأساسي، لذلك نسخدم allDone لدوائر التُدريب
+  // ونُبقي الأزرار ظاهرة ما دام لسا باقٍ مواضيع موسّعة (230→459).
+  const allDone =
+    complete && (status?.totalTopics ?? 0) > 0 && done >= (status?.totalTopics ?? 0);
   const phase = status?.phase ?? "curriculum";
   const running = status?.running === true;
-  const done = status?.aiDocs ?? 0;
   const cur = status?.curriculum ?? status?.totalTopics ?? 0;
   const extended = status?.extended ?? 0;
   const libTotal = status?.libraryTotal ?? 0;
@@ -200,7 +205,7 @@ export default function AITrainer() {
         </>
       )}
 
-      {complete ? (
+      {allDone ? (
         <div className="rounded-lg border border-mint bg-mint/10 p-4">
           <p className="mb-1 text-lg font-bold text-mint">تم تعليم النموذج الآن ✓</p>
           <p className="mb-3 text-sm leading-6 text-dim">
@@ -273,7 +278,15 @@ export default function AITrainer() {
           >
             {busy ? "يتدرب الآن..." : "درّب دفعة الآن (يدوي)"}
           </button>
-          <p className="self-center text-xs text-faint">التدريب التلقائي شغال — الزر للضغط الاستعجالي فقط.</p>
+          <button
+            onClick={() => void runBatch(20)}
+            disabled={busy || !status?.enabled}
+            className="rounded-lg bg-amber px-5 py-2 text-sm font-bold text-ink transition hover:brightness-110 disabled:opacity-40"
+            title="يدرّب 20 درساً دفعة واحدة للتسريع على جهازك"
+          >
+            {busy ? "يتدرب الآن..." : "كرّر التدريب على جهازك (×20)"}
+          </button>
+          <p className="self-center text-xs text-faint">التدريب التلقائي شغال بالخلفية — زر ×20 للتسريع اليدوي الفوري.</p>
         </div>
       )}
 

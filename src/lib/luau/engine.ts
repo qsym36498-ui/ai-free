@@ -10,7 +10,8 @@ import { BUILTIN_DOCS, docToTrainingText } from "./corpus";
 import { buildSearchIndex, type ScoredDoc, type SearchDoc, type LuauSearchIndex } from "./search";
 import { fetchLanguageBooks } from "./langbooks";
 import { contentTokens, expandWithStems, normalizeArabic, stemArabic, tokenize } from "./text";
-import { TEMPLATES } from "./templates";
+import { scoreTemplates } from "./templates";
+import { multiSourceAnswer } from "./composer";
 import { parseQwenAnswer, qwenAvailable, qwenChat } from "../qwen";
 import type { CodeTemplate, EngineAnswer, KnowledgeDoc } from "./types";
 
@@ -127,38 +128,6 @@ async function fetchUserDocs(): Promise<SearchDoc[]> {
     // الجدول غير موجود بعد أو لا اتصال — نكمل بالمعرفة المدمجة فقط
     return [];
   }
-}
-
-/** مطابقة النية مع قوالب المولد — مع مطابقة الجذوع العربية */
-function matchTemplate(question: string) {
-  const normalized = normalizeArabic(question);
-  const tokens = new Set(tokenize(question));
-  const stemmed = new Set(expandWithStems(Array.from(tokens)));
-
-  let best: { id: string; hits: number } | null = null;
-
-  for (const template of TEMPLATES) {
-    let hits = 0;
-    for (const keyword of template.keywords) {
-      const normalizedKeyword = normalizeArabic(keyword);
-      // مطابقة عبارة كاملة داخل السؤال
-      if (normalizedKeyword.includes(" ") && normalized.includes(normalizedKeyword)) {
-        hits += 3;
-        continue;
-      }
-      // مطابقة كلمة واحدة (مباشرة أو بجذرها)
-      if (tokens.has(normalizedKeyword)) {
-        hits += normalizedKeyword.length >= 4 ? 2 : 1;
-      } else if (stemmed.has(stemArabic(normalizedKeyword))) {
-        hits += 1;
-      }
-    }
-    if (hits > 0 && (best === null || hits > best.hits)) {
-      best = { id: template.id, hits };
-    }
-  }
-
-  return best;
 }
 
 /** هل السؤال طلب إنشاء نظام؟ */
@@ -424,11 +393,15 @@ export async function answerQuestion(question: string, opts?: { offline?: boolea
   const capabilities = capabilitiesAnswer(trimmed);
   if (capabilities) return capabilities;
 
-  // 1) هل يقصد نظاماً جاهزاً من المولد؟
-  const match = matchTemplate(trimmed);
-  if (match && match.hits >= 2) {
-    const template = TEMPLATES.find((t) => t.id === match.id)!;
-    return generatorAnswer(template);
+  // 1) هل يقصد نظاماً جاهزاً من المولد؟ — نبصر أولاً إن كان السؤال يلمس أكثر
+  //    من نظام أو يطلب تفاصيل دقيقة (حد/حفظ/لكل لاعب) فنجمعه من عدة مصادر.
+  const composed = multiSourceAnswer(trimmed);
+  if (composed) return composed;
+
+  const matches = scoreTemplates(trimmed);
+  const top = matches[0];
+  if (top && top.hits >= 2) {
+    return generatorAnswer(top.template);
   }
 
   return await knowledgeAnswer(trimmed, opts?.offline === true);

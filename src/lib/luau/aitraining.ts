@@ -6,7 +6,7 @@
  * المكالمات كلها على الخادم — لا يشارك جهاز الزائر في هذا التدريب.
  */
 import { and, desc, eq, like, or } from "drizzle-orm";
-import { db } from "@/db";
+import { db, withQueryRetry } from "@/db";
 import { knowledgeEntries } from "@/db/schema";
 import { qwenAvailable, qwenChat } from "../qwen";
 import { buildSearchText, tokenize } from "./text";
@@ -336,15 +336,19 @@ export async function generateAILesson(topic: AITopic): Promise<TrainedResult> {
   }
 
   try {
-    await db.insert(knowledgeEntries).values({
-      title,
-      content: content.slice(0, 6000),
-      code: code ? code.slice(0, 8000) : null,
-      tags: tags.slice(0, 400),
-      sourceType: "درس",
-      authorName: "تدريب Qwen",
-      searchText: buildSearchText(title, content, code, tags),
-    });
+    await withQueryRetry(
+      () =>
+        db.insert(knowledgeEntries).values({
+          title,
+          content: content.slice(0, 6000),
+          code: code ? code.slice(0, 8000) : null,
+          tags: tags.slice(0, 400),
+          sourceType: "درس",
+          authorName: "تدريب Qwen",
+          searchText: buildSearchText(title, content, code, tags),
+        }),
+      2
+    );
     const tokens = tokenize(title + " " + content + " " + (code ?? "")).length;
     return { status: "trained", topic: topic.topic, title, tokens };
   } catch (error) {
@@ -395,12 +399,26 @@ export async function trainingStatus(): Promise<{
   lastTrainedAt: string | null;
   nextTopics: string[];
 }> {
-  const rows = await db
-    .select({ title: knowledgeEntries.title, tags: knowledgeEntries.tags, createdAt: knowledgeEntries.createdAt })
-    .from(knowledgeEntries)
-    .where(eq(knowledgeEntries.authorName, "تدريب Qwen"))
-    .orderBy(desc(knowledgeEntries.createdAt))
-    .limit(8000);
+  let rows: Array<{ title: string; tags: string; createdAt: Date | null }>;
+  try {
+    rows = await db
+      .select({ title: knowledgeEntries.title, tags: knowledgeEntries.tags, createdAt: knowledgeEntries.createdAt })
+      .from(knowledgeEntries)
+      .where(eq(knowledgeEntries.authorName, "تدريب Qwen"))
+      .orderBy(desc(knowledgeEntries.createdAt))
+      .limit(8000);
+  } catch (error) {
+    // قاعدة نائمة/قطيعة مؤقتة: حالة آمنة بدل إسقاط كامل الدورة
+    console.error("trainingStatus: قراءة الحالة فشلت مؤقتاً — حالة آمنة", error);
+    return {
+      aiDocs: 0,
+      totalTopics: AI_TOPICS.length,
+      coreTopics: CORE_TOPICS.length,
+      coreComplete: false,
+      lastTrainedAt: null,
+      nextTopics: [],
+    };
+  }
 
   // المواضيع المنجزة: بتوسم "تدريب:اسم-الموضوع" أو بمطابقة العنوان
   const trainedTopics = new Set<string>();

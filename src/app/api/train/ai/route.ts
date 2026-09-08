@@ -54,7 +54,7 @@ export async function POST(request: Request) {
     const body = (await request.json()) as { batch?: unknown; topic?: unknown };
     const batch =
       typeof body.batch === "number" && Number.isFinite(body.batch)
-        ? Math.max(1, Math.min(Math.floor(body.batch), 10))
+        ? Math.max(1, Math.min(Math.floor(body.batch), 20))
         : 3;
     const topic = typeof body.topic === "string" ? body.topic.trim() : "";
 

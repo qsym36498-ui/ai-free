@@ -1,4 +1,5 @@
 import { GAME_TEMPLATES } from "./templates-games";
+import { expandWithStems, normalizeArabic, stemArabic, tokenize } from "./text";
 import type { CodeTemplate } from "./types";
 
 /**
@@ -565,6 +566,222 @@ end)`,
     ],
   },
   {
+    id: "click-counter-advanced",
+    title: "نظام عداد نقرات آمن كامل (لكل لاعب + حد أقصى + حفظ)",
+    description: "عداد نقرات مخزّن في جدول لكل لاعب، مع RemoteEvent آمن يحد أقصى 3 نقرات في الثانية ضد الغش، لوحة leaderstats، وحفظ تلقائي بـ DataStore عند الخروج.",
+    keywords: [
+      "نقرات", "النقر", "عدد النقرات", "النقرات", "نقرات لكل لاعب", "لكل لاعب",
+      "يخزن", "في الجدول", "جدول العداد", "حد اقصى", "بحد", "اقصى عدد", "بالنقره",
+      "العداد", "نظام نقرات", "كليك", "click counter", "click", "counter",
+      "مكافاة نقرات", "حفظ النقرات", "عداد لكل لاعب",
+    ],
+    placement: "ضع سكربت السيرفر داخل ServerScriptService، واللوكال داخل StarterPlayer > StarterPlayerScripts",
+    scripts: [
+      {
+        name: "ClickSystem",
+        location: "ServerScriptService",
+        scriptType: "Script",
+        code: `local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local DataStoreService = game:GetService("DataStoreService")
+
+-- الحد الأقصى للنقرات في الثانية لكل لاعب
+local MAX_PER_SECOND = 3  -- عدّله حسب طلبك
+
+-- العداد لكل لاعب يُخزَّن في جداول هنا (الجداول مراجع)
+local clickRemote = Instance.new("RemoteEvent")
+clickRemote.Name = "ClickSignal"
+clickRemote.Parent = ReplicatedStorage
+
+local store = DataStoreService:GetDataStore("ClickData_v1")
+local playerClicks = {}            -- العداد لكل لاعب
+local clickHistory = {}            -- آخر أوقات النقرات لمنع الغش
+local DEFAULT_DATA = { clicks = 0 }
+
+local function withRetry(operation, attempts)
+	for i = 1, attempts do
+		local ok, result = pcall(operation)
+		if ok then return true, result end
+		warn("محاولة فاشلة رقم " .. i .. ": " .. tostring(result))
+		task.wait(1)
+	end
+	return false, nil
+end
+
+local function loadData(player)
+	local key = "player_" .. player.UserId
+	local ok, data = withRetry(function()
+		return store:GetAsync(key)
+	end, 3)
+	if ok and typeof(data) == "table" and typeof(data.clicks) == "number" then
+		playerClicks[player] = data.clicks
+	else
+		playerClicks[player] = DEFAULT_DATA.clicks
+	end
+	local stats = player:FindFirstChild("leaderstats")
+	local label = stats and stats:FindFirstChild("Clicks")
+	if label then label.Value = playerClicks[player] end
+end
+
+local function saveData(player)
+	local key = "player_" .. player.UserId
+	local value = playerClicks[player] or DEFAULT_DATA.clicks
+	withRetry(function()
+		store:UpdateAsync(key, function()
+			return { clicks = value }
+		end)
+	end, 3)
+end
+
+local function createStats(player)
+	local stats = Instance.new("Folder")
+	stats.Name = "leaderstats"
+	local clicks = Instance.new("IntValue")
+	clicks.Name = "Clicks"
+	clicks.Value = 0
+	clicks.Parent = stats
+	stats.Parent = player
+end
+
+Players.PlayerAdded:Connect(function(player)
+	createStats(player)
+	loadData(player)
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	saveData(player)
+	playerClicks[player] = nil
+	clickHistory[player] = nil
+end)
+
+-- حفظ تلقائي كل دقيقة + عند إغلاق السيرفر
+task.spawn(function()
+	while task.wait(60) do
+		for _, player in Players:GetPlayers() do
+			saveData(player)
+		end
+	end
+end)
+
+game:BindToClose(function()
+	for _, player in Players:GetPlayers() do
+		saveData(player)
+	end
+	task.wait(2)
+end)
+
+-- السيرفر وحده يزيد العداد — هذا ضد الغش
+clickRemote.OnServerEvent:Connect(function(player)
+	local now = os.clock()
+	local history = clickHistory[player]
+	if not history then
+		history = {}
+		clickHistory[player] = history
+	end
+	while #history > 0 and history[1] < now - 1 do
+		table.remove(history, 1)
+	end
+	if #history >= MAX_PER_SECOND then
+		clickRemote:FireClient(player, "blocked", playerClicks[player] or 0)
+		return
+	end
+	table.insert(history, now)
+	playerClicks[player] = (playerClicks[player] or DEFAULT_DATA.clicks) + 1
+	local stats = player:FindFirstChild("leaderstats")
+	local label = stats and stats:FindFirstChild("Clicks")
+	if label then label.Value = playerClicks[player] end
+	clickRemote:FireClient(player, "updated", playerClicks[player])
+end)`,
+      },
+      {
+        name: "ClickCounterGui",
+        location: "StarterPlayer > StarterPlayerScripts",
+        scriptType: "LocalScript",
+        code: `local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+local clickRemote = ReplicatedStorage:WaitForChild("ClickSignal")
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "ClickCounterGui"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = playerGui
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 260, 0, 150)
+frame.Position = UDim2.new(0.5, -130, 0.85, -75)
+frame.BackgroundColor3 = Color3.fromRGB(16, 23, 20)
+frame.BackgroundTransparency = 0.15
+frame.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 14)
+corner.Parent = frame
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 40)
+title.BackgroundTransparency = 1
+title.Text = "عداد النقرات"
+title.TextColor3 = Color3.fromRGB(233, 242, 236)
+title.TextSize = 20
+title.Font = Enum.Font.GothamBold
+title.Parent = frame
+
+local counterLabel = Instance.new("TextLabel")
+counterLabel.Size = UDim2.new(1, 0, 0, 44)
+counterLabel.Position = UDim2.new(0, 0, 0, 40)
+counterLabel.BackgroundTransparency = 1
+counterLabel.Text = "0"
+counterLabel.TextColor3 = Color3.fromRGB(61, 220, 151)
+counterLabel.TextSize = 34
+counterLabel.Font = Enum.Font.GothamBold
+counterLabel.Parent = frame
+
+local button = Instance.new("TextButton")
+button.Size = UDim2.new(0, 200, 0, 44)
+button.Position = UDim2.new(0.5, -100, 1, -56)
+button.BackgroundColor3 = Color3.fromRGB(23, 184, 119)
+button.Text = "انقرني!"
+button.TextColor3 = Color3.new(1, 1, 1)
+button.TextSize = 20
+button.Font = Enum.Font.GothamBold
+button.Parent = frame
+
+local buttonCorner = Instance.new("UICorner")
+buttonCorner.CornerRadius = UDim.new(0, 10)
+buttonCorner.Parent = button
+
+-- إرسال الطلب للسيرفر فقط — السيرفر من يقرر
+button.MouseButton1Click:Connect(function()
+	clickRemote:FireServer()
+end)
+
+clickRemote.OnClientEvent:Connect(function(status, count)
+	if status == "updated" then
+		counterLabel.Text = tostring(count)
+		button.BackgroundColor3 = Color3.fromRGB(245, 185, 66)
+		task.delay(0.1, function()
+			button.BackgroundColor3 = Color3.fromRGB(23, 184, 119)
+		end)
+	elseif status == "blocked" then
+		button.TextSize = 16
+		task.delay(0.4, function()
+			button.TextSize = 20
+		end)
+	end
+end)`,
+      },
+    ],
+    notes: [
+      "العداد مخزّن في جدول على السيرفر وكل زيادة تعبر من RemoteEvent — أي تعديل من اللوكال لا ينفع لأن السيرفر يتحقق دائماً.",
+      "MAX_PER_SECOND يحد النقرات في الثانية؛ عدّله لأي رقم أعلى أو أخفض يناسب لعبتك.",
+      "مرجع الجداول في لواو مهم: playerClicks مخزّنة كمفاتيح للاعبين وكل قيمة رقم — لا تنسخ الجدول بل شارك نفس المرجع.",
+      "تفعيل API Services في إعدادات اللعبة ضروري ليشتغل DataStore في الاستوديو.",
+    ],
+  },
+  {
     id: "sprint",
     title: "نظام ركض بالضغط على Shift",
     description: "يركض اللاعب أسرع أثناء الضغط على زر، مع استهلاك شريط طاقة يتجدد.",
@@ -996,4 +1213,44 @@ export const TEMPLATES: CodeTemplate[] = [...BASE_TEMPLATES, ...GAME_TEMPLATES];
 
 export function getTemplate(id: string): CodeTemplate | undefined {
   return TEMPLATES.find((t) => t.id === id);
+}
+
+export interface TemplateScored {
+  template: CodeTemplate;
+  hits: number;
+}
+
+/**
+ * ترجيح كل القوالب حسب السؤال — نفس منطق المطابقة القديم لكن يعيد
+ * النتائج كلها بترتيب تنازلي ليتسنى للمحرك دمج أكثر من مصدر.
+ */
+export function scoreTemplates(question: string): TemplateScored[] {
+  const normalized = normalizeArabic(question);
+  const tokens = new Set(tokenize(question));
+  const stemmed = new Set(expandWithStems(Array.from(tokens)));
+
+  const scored: TemplateScored[] = [];
+
+  for (const template of TEMPLATES) {
+    let hits = 0;
+    for (const keyword of template.keywords) {
+      const normalizedKeyword = normalizeArabic(keyword);
+      // عبارة كاملة داخل السؤال
+      if (normalizedKeyword.includes(" ") && normalized.includes(normalizedKeyword)) {
+        hits += 3;
+        continue;
+      }
+      // كلمة واحدة (مباشرة أو بجذرها)
+      if (tokens.has(normalizedKeyword)) {
+        hits += normalizedKeyword.length >= 4 ? 2 : 1;
+      } else if (stemmed.has(stemArabic(normalizedKeyword))) {
+        hits += 1;
+      }
+    }
+    if (hits > 0) {
+      scored.push({ template, hits });
+    }
+  }
+
+  return scored.sort((a, b) => b.hits - a.hits);
 }

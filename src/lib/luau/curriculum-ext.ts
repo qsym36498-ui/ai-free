@@ -369,6 +369,24 @@ const CS_FUNDAMENTALS: AITopic[] = [
   { topic: "مقدمة في التجزئة العملية", kind: "lesson", level: "متوسط", focus: "خرائط سريعة + تجنب التصادم الفعلي" },
 ];
 
+/* ═══════════════════════ لواو — أساسيات اللغة العميقة ═══════════════════════ */
+const LUAU_DEEP: AITopic[] = [
+  { topic: "المنطق and/or/not والقيم الصادقة والكاذبة", kind: "lesson", level: "مبتدئ", focus: "truthy/falsy في لواو + خدعة a or b للقيم الافتراضية + الفحص القصير data and data.xp" },
+  { topic: "الجداول مراجع لا نسخ table.clone", kind: "lesson", level: "متوسط", focus: "لماذا تعديل جدول في دالة يغيّر الأصل + النسخ السطحي والعميق" },
+  { topic: "إرجاع قيم متعددة من الدوال", kind: "lesson", level: "متوسط", focus: "فواصل القيم + الأصل في string.find وثُنائية الأحداث" },
+  { topic: "varargs والدوال المتغيرة (...)", kind: "lesson", level: "متوسط", focus: "جمع الوسائط + select('#', ...) + دالة sum مرنة" },
+  { topic: "self والنقطتان (:) لدوال الكائنات", kind: "lesson", level: "متوسط", focus: "table:method مقابل table.method + أخطاء self المفقود" },
+  { topic: "التحويل بين الأنواع tonumber وtostring", kind: "lesson", level: "مبتدئ", focus: "نص إلى رقم والعكس + دمج .. + متى يعود nil" },
+  { topic: "العمليات على البت bitwise في لواو", kind: "lesson", level: "متقدم", focus: "& | ~ << >> + تخزين أعلام صلاحيات وضغط إحداثيات" },
+  { topic: "if التعبيري والقيم الشرطية", kind: "lesson", level: "متوسط", focus: "if cond then a else b كتعبير + أفضل من خدعة and or" },
+  { topic: "المساواة العميقة بين الجداول", kind: "lesson", level: "متوسط", focus: "== مراجع لا محتوى + مقارنة متكررة آمنة" },
+  { topic: "مكتبة os للوقت والقياس", kind: "lesson", level: "متوسط", focus: "os.time/os.clock/os.date + مكافآت يومية وقياس أداء" },
+  { topic: "التعامل الآمن مع nil والجداول الفارغة", kind: "lesson", level: "مبتدئ", focus: "فحص قبل الوصول + قيمة افتراضية or + تجنب الانهيار" },
+  { topic: "أولويات العمليات والمقارنات", kind: "lesson", level: "مبتدئ", focus: "ترتيب الحساب والأُس والمنطق + الأقواس للوضوح" },
+  { topic: "قواعد تسمية المتغيرات: لاتينية فقط بلا أسماء عربية", kind: "lesson", level: "مبتدئ", focus: "a-z A-Z _ ثم أرقام غير بادئة + الأسماء العربية تسبب Syntax Error + لماذا لا يقبل لواو واجهات غير ASCII" },
+  { topic: "فخاخ الميتاتيبل: __index لا يعمل إلا عبر setmetatable", kind: "lesson", level: "متوسط", focus: "t.__index = f لا يلتقط الناقص ويعرضه pairs كخانة عادية + الحل setmetatable + النسخ الحقيقي table.clone" },
+];
+
 /* ═══════════════════════ مهارات وأدوات المبرمج ═══════════════════════ */
 const CRAFT_EXT: AITopic[] = [
   { topic: "أساسيات git للمبرمج المبتدئ", kind: "lesson", level: "مبتدئ", focus: "init/add/commit/status/log بأمثلة", context: "طرفية مع git" },
@@ -395,6 +413,7 @@ const CRAFT_EXT: AITopic[] = [
 
 /** كل مواضيع المنهج الموسّع مدموجة (تُدرَّب بعد المنهج الأساسي، بالخلفية). */
 export const EXTENDED_TOPICS: AITopic[] = [
+  ...LUAU_DEEP,
   ...ROBLOX_DEEP,
   ...ROBLOX_SYSTEMS,
   ...PYTHON_EXT,

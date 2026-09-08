@@ -1,4 +1,5 @@
 import { LANGUAGE_LESSONS } from "./lessons-core";
+import { BASICS_DEEP_LESSONS } from "./lessons-basics-deep";
 import { PRO_LESSONS } from "./lessons-pro";
 import { QUICK_REFERENCES, ROBLOX_LESSONS } from "./lessons-roblox";
 import type { KnowledgeDoc } from "./types";
@@ -6,6 +7,7 @@ import type { KnowledgeDoc } from "./types";
 /** كل المعرفة المبنية يدوياً داخل النموذج */
 export const BUILTIN_DOCS: KnowledgeDoc[] = [
   ...LANGUAGE_LESSONS,
+  ...BASICS_DEEP_LESSONS,
   ...ROBLOX_LESSONS,
   ...PRO_LESSONS,
   ...QUICK_REFERENCES,
