@@ -44,3 +44,4 @@ dev.log
 _test-*.ts
 _probe-*.ts
 scripts/_migrate.ts
+dev-server-err.log

@@ -14,6 +14,7 @@ interface QwenConfig {
   maxTokens: number;
   temperature: number;
   timeoutMs: number;
+  provider: "openai" | "gemini";
 }
 
 function qwenConfig(): QwenConfig {
@@ -26,6 +27,7 @@ function qwenConfig(): QwenConfig {
     maxTokens: Number(process.env.QWEN_MAX_TOKENS ?? 900),
     temperature: Number(process.env.QWEN_TEMPERATURE ?? 0.4),
     timeoutMs: 20_000,
+    provider: (process.env.QWEN_PROVIDER ?? "").toLowerCase() === "gemini" ? "gemini" : "openai",
   };
 }
 
@@ -49,40 +51,78 @@ export async function qwenChat(req: QwenRequest): Promise<string | null> {
   if (!c.enabled || !c.apiKey) return null;
 
   try {
-    const response = await fetch(`${c.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${c.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: c.model,
-        messages: [
-          { role: "system", content: req.system },
-          { role: "user", content: req.user },
-        ],
-        max_tokens: req.maxTokens ?? c.maxTokens,
-        temperature: req.temperature ?? c.temperature,
-      }),
-      signal: AbortSignal.timeout(req.timeoutMs ?? c.timeoutMs),
-    });
-
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      console.error("qwen http error", response.status, body.slice(0, 300));
-      return null;
-    }
-
-    const data = (await response.json()) as {
-      choices?: { message?: { content?: unknown } }[];
-      usage?: { total_tokens?: unknown };
-    };
-    const text = data.choices?.[0]?.message?.content;
-    return typeof text === "string" && text.trim() ? text.trim() : null;
+    const text =
+      c.provider === "gemini" ? await geminiChat(c, req) : await openaiChat(c, req);
+    return text && text.trim() ? text.trim() : null;
   } catch (error) {
     console.error("qwen call failed", error);
     return null;
   }
+}
+
+async function openaiChat(c: QwenConfig, req: QwenRequest): Promise<string | null> {
+  const response = await fetch(`${c.baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${c.apiKey}`,
+    },
+    body: JSON.stringify({
+      model: c.model,
+      messages: [
+        { role: "system", content: req.system },
+        { role: "user", content: req.user },
+      ],
+      max_tokens: req.maxTokens ?? c.maxTokens,
+      temperature: req.temperature ?? c.temperature,
+    }),
+    signal: AbortSignal.timeout(req.timeoutMs ?? c.timeoutMs),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    console.error("qwen http error", response.status, body.slice(0, 300));
+    return null;
+  }
+
+  const data = (await response.json()) as {
+    choices?: { message?: { content?: unknown } }[];
+    usage?: { total_tokens?: unknown };
+  };
+  const text = data.choices?.[0]?.message?.content;
+  return typeof text === "string" ? text : null;
+}
+
+/** نقطة Gemini يستقبل المفتاح كمعامل URL والصيغة struct فيها — لا سجل رسائل */
+async function geminiChat(c: QwenConfig, req: QwenRequest): Promise<string | null> {
+  const response = await fetch(
+    `${c.baseUrl}/models/${encodeURIComponent(c.model)}:generateContent?key=${encodeURIComponent(c.apiKey)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: req.user }] }],
+        ...(req.system ? { systemInstruction: { parts: [{ text: req.system }] } } : {}),
+        generationConfig: {
+          maxOutputTokens: req.maxTokens ?? c.maxTokens,
+          temperature: req.temperature ?? c.temperature,
+        },
+      }),
+      signal: AbortSignal.timeout(req.timeoutMs ?? c.timeoutMs),
+    }
+  );
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    console.error("gemini http error", response.status, body.slice(0, 300));
+    return null;
+  }
+
+  const data = (await response.json()) as {
+    candidates?: { content?: { parts?: { text?: unknown }[] } }[];
+  };
+  const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") ?? "";
+  return typeof text === "string" ? text : "";
 }
 
 export interface ParsedAnswer {
