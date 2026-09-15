@@ -12,7 +12,7 @@ jest.mock("@/db", () => ({
   pool: { query: jest.fn(), end: jest.fn() },
 }));
 
-import { CORE_TOPICS, AI_TOPICS, EXTENDED_TOPICS } from "@/lib/luau/aitraining";
+import { CORE_TOPICS, AI_TOPICS, EXTENDED_TOPICS, extractJson } from "@/lib/luau/aitraining";
 
 describe("curriculum structure", () => {
   it("CORE_TOPICS has 129 topics", () => {
@@ -106,5 +106,40 @@ describe("topic matching logic (extracted)", () => {
 
   it("no match", () => {
     expect(topicMatches("الدوال", "الجداول")).toBe(false);
+  });
+});
+
+describe("extractJson (lenient JSON parser)", () => {
+  it("parses clean JSON", () => {
+    const raw = '{"title":"أ","content":"ب","code":"x = 1","tags":"ت"}';
+    expect(extractJson(raw)).toEqual({ title: "أ", content: "ب", code: "x = 1", tags: "ت" });
+  });
+
+  it("parses JSON wrapped in model chatter", () => {
+    const raw = 'بعض النص\n{"title":"أ","content":"ب","code":"x = 1","tags":"ت"}\nنص آخر';
+    expect(extractJson(raw)?.title).toBe("أ");
+  });
+
+  it("escapes real newlines inside string values (the Gemini bug we fixed)", () => {
+    const raw =
+      '{"title":"أ","content":"سطر أول\nسطر ثاني","code":"-- تعليق\nx = 1","tags":"ت"}';
+    const parsed = extractJson(raw);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.code).toBe("-- تعليق\nx = 1");
+    expect(parsed!.content).toBe("سطر أول\nسطر ثاني");
+  });
+
+  it("escapes real tabs inside string values", () => {
+    const raw = '{"title":"أ","content":"م\tفاصل","code":"x = 1","tags":"ت"}';
+    expect(extractJson(raw)?.content).toBe("م\tفاصل");
+  });
+
+  it("returns null for garbage without JSON", () => {
+    expect(extractJson("مرحباً فقط، لا JSON هنا")).toBeNull();
+  });
+
+  it("returns null for truncated / unrepairable JSON", () => {
+    const raw = '{"title":"أ","content":"سطر\nلم يكتمل';
+    expect(extractJson(raw)).toBeNull();
   });
 });

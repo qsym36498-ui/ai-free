@@ -251,12 +251,65 @@ export async function existsTopic(topic: string): Promise<boolean> {
   }
 }
 
-function extractJson(raw: string): Record<string, unknown> | null {
+/** الأسماء اللاتينية الصافية وحدها مقبولة في الكود (مفتاح الحوكمة); هذا القصد مُشارك مع hasInvalidCode */
+function escapeJsonStrings(raw: string): string {
+  let out = "";
+  let inString = false;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (inString) {
+      if (ch === "\\") {
+        out += ch;
+        if (i + 1 < raw.length) {
+          out += raw[i + 1];
+          i++;
+        }
+        continue;
+      }
+      if (ch === '"') {
+        inString = false;
+        out += ch;
+        continue;
+      }
+      if (ch === "\n") {
+        out += "\\n";
+        continue;
+      }
+      if (ch === "\r") {
+        out += "\\r";
+        continue;
+      }
+      if (ch === "\t") {
+        out += "\\t";
+        continue;
+      }
+      out += ch;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    out += ch;
+  }
+  return out;
+}
+
+/**
+ * استخراج JSON من رد النموذج مع إصلاح المتساهل: بعض النماذج (كـ Gemini) تضع أسطراً
+ * حقيقية داخل قيم النص بدل \n — نُهرّبها ثم نعيد المحاولة قبل اليأس.
+ */
+export function extractJson(raw: string): Record<string, unknown> | null {
   const start = raw.indexOf("{");
   const end = raw.lastIndexOf("}");
   if (start === -1 || end <= start) return null;
+  const slice = raw.slice(start, end + 1);
   try {
-    const parsed = JSON.parse(raw.slice(start, end + 1));
+    const parsed = JSON.parse(slice);
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    // محاولة ثانية بعد هَرب الأسطر/التبويب الحرفي داخل قيم النص
+  }
+  try {
+    const repaired = escapeJsonStrings(slice);
+    const parsed = JSON.parse(repaired);
     return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
   } catch {
     return null;
@@ -314,18 +367,23 @@ export async function generateAILesson(topic: AITopic): Promise<TrainedResult> {
     topic.focus +
     ".\nاكتب شرحاً عميقاً كافياً (400-800 كلمة) يبني الفهم خطوة بخطوة، ومثال كود حقيقي كامل قابل للنسخ والتشغيل. إذا تعلق الموضوع بالأمان أو الشبكات أو المال الافتراضي، اشرح أفضل الممارسات الآمنة.";
 
-  let raw = await qwenChat({ system, user, maxTokens: 3000, temperature: 0.5, timeoutMs: 45_000 });
+  let raw = await qwenChat({ system, user, maxTokens: 6000, temperature: 0.5, timeoutMs: 60_000 });
   // محاولة واحدة ثانية بعد فاصل قصير — غالباً rate limit مؤقت أو مهلة
   if (!raw) {
     await new Promise((resolve) => setTimeout(resolve, 2500));
-    raw = await qwenChat({ system, user, maxTokens: 3000, temperature: 0.5, timeoutMs: 45_000 });
+    raw = await qwenChat({ system, user, maxTokens: 6000, temperature: 0.5, timeoutMs: 60_000 });
   }
   if (!raw) return { status: "failed", topic: topic.topic, error: "لم يرد النموذج" };
 
   const json = extractJson(raw);
-  let title = typeof json?.title === "string" && json.title.trim() ? json.title.trim().slice(0, 200) : "";
-  let content = typeof json?.content === "string" && json.content.trim() ? json.content.trim() : "";
-  let code = cleanCode(json?.code);
+  // JSON غير صالح = درس مرفوض صراحة، لا يدخل القاعدة نصاً خاماً غير مفحوص إطلاقاً
+  if (!json) {
+    return { status: "failed", topic: topic.topic, error: "استجابة النموذج ليست JSON صالحاً بعد هَرب الأسطر" };
+  }
+
+  let title = typeof json.title === "string" && json.title.trim() ? json.title.trim().slice(0, 200) : "";
+  let content = typeof json.content === "string" && json.content.trim() ? json.content.trim() : "";
+  let code = cleanCode(json.code);
   // بوابة صحة الكود حسب لغة الدرس: يحوّل المعرّفات العربية تلقائياً لأسماء لاتينية
   // (تنظيف مع حفظ النصوص والتعليقات) ثم يفحص. درس يبقى كوده معطوباً لا يدخل
   // دماغ النموذج — يُعاد تدريبه لاحقاً.
@@ -346,7 +404,9 @@ export async function generateAILesson(topic: AITopic): Promise<TrainedResult> {
   if (tags && !tags.includes(marker)) tags = marker + "," + tags;
 
   if (!title) title = topic.topic;
-  if (content.length < 40) content = raw.slice(0, 6000);
+  if (content.length < 40) {
+    return { status: "failed", topic: topic.topic, error: "محتوى الدرس قصير جداً أو مفقود" };
+  }
 
   if (await existsTopic(topic.topic)) {
     return { status: "skipped", topic: topic.topic, title };
