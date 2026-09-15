@@ -30,8 +30,9 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       QWEN_ENABLED: "true"
       QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
-      QWEN_BASE_URL: ${{ secrets.QWEN_BASE_URL || 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1' }}
-      QWEN_MODEL: ${{ secrets.QWEN_MODEL || 'qwen-coder-plus' }}
+      QWEN_BASE_URL: ${{ secrets.QWEN_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta' }}
+      QWEN_MODEL: ${{ secrets.QWEN_MODEL || 'gemini-3.6-flash' }}
+      QWEN_PROVIDER: ${{ secrets.QWEN_PROVIDER || 'gemini' }}
       TRAIN_BATCH: ${{ inputs.batch || vars.TRAIN_BATCH || '10' }}
     steps:
       - uses: actions/checkout@v4
