@@ -19,8 +19,19 @@ describe("hasInvalidCode", () => {
     expect(hasInvalidCode("local درجات أحمد = {85, 90}")).toBeTruthy();
   });
 
-  it("يرفض عوامل غير مدعومة مثل جمع مختصر", () => {
-    expect(hasInvalidCode("local sum = 0\nsum += 5")).toBeTruthy();
+  it("يرفض ++ غير المدعوم في لواو", () => {
+    expect(hasInvalidCode("local count = 0\ncount++")).toBeTruthy();
+  });
+
+  it("يقبل العوامل المركبة الصالحة في لواو مثل +=", () => {
+    expect(hasInvalidCode("local sum = 0\nsum += 5")).toBeNull();
+    expect(hasInvalidCode("local t = {1, 2}\nt[1] -= 1")).toBeNull();
+    expect(hasInvalidCode("local s = \"a\"\ns ..= \"b\"")).toBeNull();
+  });
+
+  it("يصحّح فقط ++ الممنوع ويبقي += في الـ sanitizer", () => {
+    expect(hasInvalidCode("local n = 0\nn++")).toBeTruthy();
+    expect(sanitizeLuauCode("local n = 0\nn += 1")).toContain("n += 1");
   });
 
   it("يقبل كوداً سليماً بنصوص عربية داخل السلاسل والتعليقات", () => {
@@ -45,7 +56,7 @@ describe("sanitizeLuauCode", () => {
     expect(clean).toContain('"أحمد"');
     expect(clean).toContain("ar1"); // العمر
     expect(clean).toContain("ar2"); // الاسم
-    expect(clean).toContain("= ar3 + "); // ناتج إصلاح +=
+    expect(clean).toContain("ar3 += i"); // العامل المركب += صالح في لواو فيبقى كما هو
     expect(clean).toMatch(/print\(ar2 \.\. /); // نفس الاسم العربي أُعيدت تسميته باستمرار
   });
 
@@ -63,10 +74,10 @@ describe("sanitizeLuauCode", () => {
     expect(clean).toMatch(/^\s*local\s+ar\d+\s*=/);
   });
 
-  it("يصلح العوامل على عناصر الجداول", () => {
+  it("يصلح العوامل على عناصر الجداول عند الحاجة", () => {
     const clean = sanitizeLuauCode("local t = {0}\nt[1] += 2");
     expect(hasInvalidCode(clean)).toBeNull();
-    expect(clean).toContain("t[1] = t[1] + 2");
+    expect(clean).toContain("t[1] += 2"); // المركب صالح في لواو فيبقى كما هو
   });
 
   it("يعامل # طولَ جدول في لواو لا تعليقاً — يعيد تسمية ما بعده", () => {
