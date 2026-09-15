@@ -10,6 +10,7 @@ import { db, withQueryRetry } from "@/db";
 import { knowledgeEntries } from "@/db/schema";
 import { qwenAvailable, qwenChat } from "../qwen";
 import { buildSearchText, tokenize } from "./text";
+import { detectLang, hasInvalidCode, sanitizeCode } from "./codeValid";
 import { EXTENDED_TOPICS } from "./curriculum-ext";
 // يُعاد تصديره من مركز المنهج (aitraining) ليستورده autoTrainer من مكان واحد
 export { EXTENDED_TOPICS };
@@ -296,7 +297,11 @@ export async function generateAILesson(topic: AITopic): Promise<TrainedResult> {
     langName +
     ' مع تعليقات عربية",\n"tags":"كلمة1,كلمة2",\n"level":"' +
     topic.level +
-    '"}';
+    '"}' +
+    "\n\nقاعدة حاسمة في الكود: كل أسماء المتغيرات والدوال والمفاتيح المنطقية يجب أن تكون بأحرف إنجليزية لاتينية (ASCII) فقط — مثل name/speed/getTotal لا العمر ولا حسابالمعدل ولا أي اسم عربي. النصوص داخل print أو التعليقات مسموح أن تكون عربية." +
+    (langName === "لواو"
+      ? " ولا تستخدم عوامل لا وجود لها في لواو مثل += أو -= أو *= أو /= أو ++ — اكتبها بصيغة x = x + y."
+      : "");
 
   const user =
     "الموضوع: " +
@@ -320,7 +325,19 @@ export async function generateAILesson(topic: AITopic): Promise<TrainedResult> {
   const json = extractJson(raw);
   let title = typeof json?.title === "string" && json.title.trim() ? json.title.trim().slice(0, 200) : "";
   let content = typeof json?.content === "string" && json.content.trim() ? json.content.trim() : "";
-  const code = cleanCode(json?.code);
+  let code = cleanCode(json?.code);
+  // بوابة صحة الكود حسب لغة الدرس: يحوّل المعرّفات العربية تلقائياً لأسماء لاتينية
+  // (تنظيف مع حفظ النصوص والتعليقات) ثم يفحص. درس يبقى كوده معطوباً لا يدخل
+  // دماغ النموذج — يُعاد تدريبه لاحقاً.
+  if (code) {
+    const lang = detectLang(topic.lang ?? topic.topic);
+    const fixed = sanitizeCode(code, lang);
+    const invalid = hasInvalidCode(fixed, lang);
+    if (invalid) {
+      return { status: "failed", topic: topic.topic, error: "كود النموذج غير صالح (" + invalid + ")" };
+    }
+    if (fixed !== code) code = fixed;
+  }
   let tags = typeof json?.tags === "string" ? json.tags.trim().slice(0, 300) : topic.topic;
   if (tags && !tags.includes("تدريب")) tags += ",تدريب";
 
