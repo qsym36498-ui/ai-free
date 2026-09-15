@@ -134,6 +134,8 @@ const ROBLOX_DEEP: AITopic[] = [
   { topic: "قياس الأداء بالـ microprofiler", kind: "lesson", level: "متقدم", focus: "debug.profilebegin + قراءة النتائج" },
   { topic: "تجميع الكائنات object pooling", kind: "lesson", level: "متقدم", focus: "إعادة استخدام الأجزاء بدل الإنشاء/الحذف المتكرر" },
   { topic: "التحميل المسبق PreloadAsync", kind: "lesson", level: "متوسط", focus: "تحميل الأصول قبل الحاجة لتفادي التقطيع" },
+  { topic: "التخزين المحلي وفك التشفير EncodedSave", kind: "lesson", level: "متقدم", focus: "EncodedSave المحلي التجريبي + حالات الاستخدام والأمان" },
+  { topic: "التعامل مع الشخصيات عبر العمود الفقري التحفيزي", kind: "lesson", level: "متقدم", focus: "Motor6D/Constraint وتجليد الأطراف مع الجسم ببرمجة نظيفة" },
 ];
 
 /* ═══════════════════════ أنظمة روبلكس جاهزة ═══════════════════════ */
