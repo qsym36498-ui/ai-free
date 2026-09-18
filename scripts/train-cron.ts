@@ -41,6 +41,7 @@ async function main(): Promise<void> {
         libraryTotal: result.libraryTotal,
         trainedTitles: result.trained.map((t) => t.title ?? t.topic),
         failedTopics: result.failed.map((f) => f.topic),
+        failedErrors: result.failed.map((f) => (f.error ? f.topic + " ←– " + f.error : f.topic)),
       })
   );
   process.exit(0);

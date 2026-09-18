@@ -77,7 +77,7 @@ function parseRetryMs(response: Response, body: string): number {
 }
 
 async function openaiChat(c: QwenConfig, req: QwenRequest): Promise<string | null> {
-  const maxAttempts = 4;
+  const maxAttempts = 6;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const response = await fetch(`${c.baseUrl}/chat/completions`, {
       method: "POST",
@@ -125,7 +125,7 @@ async function openaiChat(c: QwenConfig, req: QwenRequest): Promise<string | nul
 
 /** نقطة Gemini يستقبل المفتاح كمعامل URL والصيغة struct فيها — لا سجل رسائل */
 async function geminiChat(c: QwenConfig, req: QwenRequest): Promise<string | null> {
-  const maxAttempts = 4;
+  const maxAttempts = 6;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const response = await fetch(
       `${c.baseUrl}/models/${encodeURIComponent(c.model)}:generateContent?key=${encodeURIComponent(c.apiKey)}`,
