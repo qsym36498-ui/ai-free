@@ -1,8 +1,9 @@
 import type { AnswerSection } from "./luau/types";
 
 /**
- * عميل Qwen (أو أي مزوّد متوافق مع OpenAI) — يعمل على الخادم فقط.
- * المفتاح/النموذج/العنوان كلها من متغيرات البيئة، وبلا مفتاح يعود فوراً بـ null
+ * عميل المزوّد (Groq افتراضياً — أي واجهة متوافقة مع OpenAI) — يعمل على الخادم فقط.
+ * المفتاح/النموذج/العنوان من متغيرات البيئة: تُقرأ أسماء GROQ_* أولاً (التسمية
+ * الصحيحة) ثم QWEN_* كاحتياط للتوافق الخلفي. بلا مفتاح يعود فوراً بـ null
  * فلا تتأثر الأداة إطلاقاً (تبقى بالإجابات اليدوية).
  */
 
@@ -17,17 +18,23 @@ interface QwenConfig {
   provider: "openai" | "gemini";
 }
 
-function qwenConfig(): QwenConfig {
-  const base = process.env.QWEN_BASE_URL ?? "https://dashscope.aliyuncs.com/compatible-mode/v1";
+export function qwenConfig(): QwenConfig {
+  const base =
+    process.env.GROQ_BASE_URL ??
+    process.env.QWEN_BASE_URL ??
+    "https://api.groq.com/openai/v1";
   return {
-    enabled: (process.env.QWEN_ENABLED ?? "").toLowerCase() === "true",
-    apiKey: process.env.QWEN_API_KEY ?? "",
+    enabled: (process.env.GROQ_ENABLED ?? process.env.QWEN_ENABLED ?? "").toLowerCase() === "true",
+    apiKey: process.env.GROQ_API_KEY ?? process.env.QWEN_API_KEY ?? "",
     baseUrl: base.replace(/\/+$/, ""),
-    model: process.env.QWEN_MODEL ?? "qwen-coder-plus",
-    maxTokens: Number(process.env.QWEN_MAX_TOKENS ?? 900),
-    temperature: Number(process.env.QWEN_TEMPERATURE ?? 0.4),
-    timeoutMs: 20_000,
-    provider: (process.env.QWEN_PROVIDER ?? "").toLowerCase() === "gemini" ? "gemini" : "openai",
+    model: process.env.GROQ_MODEL ?? process.env.QWEN_MODEL ?? "openai/gpt-oss-120b",
+    maxTokens: Number(process.env.GROQ_MAX_TOKENS ?? process.env.QWEN_MAX_TOKENS ?? 4000),
+    temperature: Number(process.env.GROQ_TEMPERATURE ?? process.env.QWEN_TEMPERATURE ?? 0.4),
+    timeoutMs: 30_000,
+    provider:
+      (process.env.GROQ_PROVIDER ?? process.env.QWEN_PROVIDER ?? "").toLowerCase() === "gemini"
+        ? "gemini"
+        : "openai",
   };
 }
 

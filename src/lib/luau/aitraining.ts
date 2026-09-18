@@ -338,6 +338,17 @@ export async function generateAILesson(topic: AITopic): Promise<TrainedResult> {
   const langName = topic.lang ?? "لواو";
   const runContext =
     topic.context ?? (langName === "لواو" ? "روبلكس ستوديو" : "بيئة التطوير المستهدفة");
+  // مواضيع الأنظمة تُدرَّب على كتابة مشروع كامل ضخم قابل للنسخ والتشغيل، لا مجرد مقتطف.
+  const huge = topic.kind === "system";
+
+  const codeRule =
+    "قاعدة حاسمة في الكود: كل أسماء المتغيرات والدوال والمفاتيح المنطقية يجب أن تكون بأحرف إنجليزية لاتينية (ASCII) فقط — مثل name/speed/getTotal لا العمر ولا حسابالمعدل ولا أي اسم عربي. النصوص داخل print أو التعليقات مسموح أن تكون عربية." +
+    (langName === "لواو"
+      ? " ولا تستخدم ++ (عامل الزيادة غير موجود في لواو) — اكتبها بصيغة x = x + 1. ولاحظ أن العوامل المركبة مثل += صالحة في لواو."
+      : "") +
+    (huge
+      ? " واكتب الكود منظّماً بوحدات/دوال واضحة مع تعليقات عربية تشرح كل قسم، وابدأه بسطر يوضح مكان وضعه في ستوديو."
+      : "");
 
   const system =
     "أنت «عقل لواو» — خبير برمجة بلغة " +
@@ -351,10 +362,8 @@ export async function generateAILesson(topic: AITopic): Promise<TrainedResult> {
     ' مع تعليقات عربية",\n"tags":"كلمة1,كلمة2",\n"level":"' +
     topic.level +
     '"}' +
-    "\n\nقاعدة حاسمة في الكود: كل أسماء المتغيرات والدوال والمفاتيح المنطقية يجب أن تكون بأحرف إنجليزية لاتينية (ASCII) فقط — مثل name/speed/getTotal لا العمر ولا حسابالمعدل ولا أي اسم عربي. النصوص داخل print أو التعليقات مسموح أن تكون عربية." +
-    (langName === "لواو"
-      ? " ولا تستخدم ++ (عامل الزيادة غير موجود في لواو) — اكتبها بصيغة x = x + 1. ولاحظ أن العوامل المركبة مثل += صالحة في لواو."
-      : "");
+    "\n\n" +
+    codeRule;
 
   const user =
     "الموضوع: " +
@@ -365,13 +374,18 @@ export async function generateAILesson(topic: AITopic): Promise<TrainedResult> {
     runContext +
     ".\nالتوجيه التفصيلي: " +
     topic.focus +
-    ".\nاكتب شرحاً عميقاً كافياً (400-800 كلمة) يبني الفهم خطوة بخطوة، ومثال كود حقيقي كامل قابل للنسخ والتشغيل. إذا تعلق الموضوع بالأمان أو الشبكات أو المال الافتراضي، اشرح أفضل الممارسات الآمنة.";
+    ".\n" +
+    (huge
+      ? "اكتب شرحاً معمارياً عميقاً (800-1500 كلمة) يوضح بنية النظام كاملاً ولماذا كل جزء، ثم ضع في خانة code مشروعاً كاملاً ضخماً (250-700 سطر) جاهزاً للنسخ يشمل: الثوابت والإعدادات، تعريف الدوال/الوحدات، منطق السيرفر، منطق الكلينت، الواجهة، والحفظ — منظّماً بتعليقات عربية واضحة."
+      : "اكتب شرحاً عميقاً كافياً (400-800 كلمة) يبني الفهم خطوة بخطوة، ومثال كود حقيقي كامل قابل للنسخ والتشغيل.") +
+    " إذا تعلق الموضوع بالأمان أو الشبكات أو المال الافتراضي، اشرح أفضل الممارسات الآمنة.";
 
-  let raw = await qwenChat({ system, user, maxTokens: 6000, temperature: 0.5, timeoutMs: 60_000 });
+  const maxTokens = huge ? 14000 : 7000;
+  let raw = await qwenChat({ system, user, maxTokens, temperature: 0.5, timeoutMs: 90_000 });
   // محاولة واحدة ثانية بعد فاصل قصير — غالباً rate limit مؤقت أو مهلة
   if (!raw) {
     await new Promise((resolve) => setTimeout(resolve, 2500));
-    raw = await qwenChat({ system, user, maxTokens: 6000, temperature: 0.5, timeoutMs: 60_000 });
+    raw = await qwenChat({ system, user, maxTokens, temperature: 0.5, timeoutMs: 90_000 });
   }
   if (!raw) return { status: "failed", topic: topic.topic, error: "لم يرد النموذج" };
 
@@ -417,8 +431,8 @@ export async function generateAILesson(topic: AITopic): Promise<TrainedResult> {
       () =>
         db.insert(knowledgeEntries).values({
           title,
-          content: content.slice(0, 6000),
-          code: code ? code.slice(0, 8000) : null,
+          content: content.slice(0, 30000),
+          code: code ? code.slice(0, 90000) : null,
           tags: tags.slice(0, 400),
           sourceType: "درس",
           authorName: "تدريب Qwen",

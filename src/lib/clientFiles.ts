@@ -25,7 +25,7 @@ async function extractPdfInBrowser(file: File): Promise<string> {
       try {
         const page = await doc.getPage(pageNumber);
         const content = await page.getTextContent();
-        text += content.items.map((item: { str?: unknown }) => (typeof item?.str === "string" ? item.str : "")).join(" ") + "\n";
+        text += content.items.map((item) => (typeof (item as { str?: unknown })?.str === "string" ? (item as { str: string }).str : "")).join(" ") + "\n";
       } catch {
         // صفحة صورة أو تالفة (مثل صفحات الإهداء) — نتخطاها
       }
@@ -33,7 +33,7 @@ async function extractPdfInBrowser(file: File): Promise<string> {
     return text;
   } finally {
     try {
-      await (doc as { destroy: () => Promise<void> }).destroy();
+      await (doc as unknown as { destroy: () => Promise<void> }).destroy();
     } catch {
       /* نتجاهل */
     }

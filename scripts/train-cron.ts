@@ -14,7 +14,7 @@ import { pingDatabase, withQueryRetry } from "@/db";
 
 async function main(): Promise<void> {
   if (!qwenAvailable()) {
-    console.log("CRON_RESULT QWEN_DISABLED treated=false");
+    console.log("CRON_RESULT GROQ_DISABLED treated=false");
     process.exit(0);
   }
 

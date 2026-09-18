@@ -276,7 +276,7 @@ function capabilitiesAnswer(question: string): EngineAnswer | null {
     intro:
       "أنا عقل لواو — نموذج مكتوب يدوياً بالكامل" +
       (qwenAvailable()
-        ? "، معزّز بنموذج Qwen للردود المولّدة والأكواد الكاملة."
+        ? "، معزّز بنموذج Groq للردود المولّدة والأكواد الكاملة (حتى المشاريع الضخمة)."
         : " ولا أعتمد على أي API خارجي.") +
       " أجيبك من قاعدة معرفية ضخمة: دروس مدمجة، كتب، ومعارف اللاعبين، وأتعلم باستمرار من مساهماتهم.",
     sections: [
@@ -308,13 +308,13 @@ function sourceLabel(doc: SearchDoc): string {
 }
 
 /** يبني سياقاً مضغوطاً من أفضل النتائج لإرساله مع السؤال إلى النموذج */
-function buildRagContext(results: ScoredDoc[], maxChars = 6000): string {
+function buildRagContext(results: ScoredDoc[], maxChars = 9000): string {
   const blocks: string[] = [];
   let used = 0;
   for (const r of results) {
     const doc = r.doc;
-    const head = (doc.paragraphs[0] ?? "").slice(0, 1200);
-    const code = doc.code ? "\nمثال كود:\n" + doc.code.slice(0, 1400) : "";
+    const head = (doc.paragraphs[0] ?? "").slice(0, 1600);
+    const code = doc.code ? "\nمثال كود:\n" + doc.code.slice(0, 3000) : "";
     const block = "[" + sourceLabel(doc) + "]\n" + head + code;
     if (used + block.length > maxChars) break;
     blocks.push(block);
@@ -333,15 +333,44 @@ const QWEN_SYSTEM =
   "(لا عربية أو سيريلية إطلاقاً)، وتجنّب عامل الزيادة ++ (غير موجود في لواو) وأعطِ أسماء إنجليزية " +
   "واضحة للمتغيرات والدوال.";
 
+/** هل الطلب يريد مشروعاً/نظاماً ضخماً كاملاً؟ */
+const HUGE_SIGNALS = [
+  "ضخم",
+  "مشروع",
+  "من الصفر",
+  "لعبة كاملة",
+  "نظام كامل",
+  "نظام كبير",
+  "سكربت كبير",
+  "سكربت ضخم",
+  "كود كامل",
+  "مشروع كامل",
+  "ابني لي لعبة",
+];
+
+function wantsHugeScript(question: string): boolean {
+  const normalized = normalizeArabic(question);
+  return HUGE_SIGNALS.some((s) => normalized.includes(normalizeArabic(s)));
+}
+
+const QWEN_SYSTEM_HUGE =
+  "أنت «عقل لواو» — مهندس روبلكس خبير بلغة لواو (Luau). طُلب منك مشروع/نظام ضخم كامل. " +
+  "اكتب بالعربية العامية (شامية) شرحاً معمارياً منظّماً بعناوين ### يوضح بنية المشروع وكل وحدة، " +
+  "ثم ضع الأكواد الكاملة داخل عدة كتل ```lua ... ``` (كتلة لكل ملف/وحدة: سيرفر، كلينت، وحدات مشتركة، واجهة). " +
+  "اكتب كوداً كبيراً حقيقياً قابلاً للنسخ والتشغيل (لا هيكلاً ناقصاً)، منظّماً بتعليقات عربية، ومقسّماً لدوال/وحدات واضحة. " +
+  "استند إلى سياق المعرفة المقدَّم إن وجد وأكمله من معرفتك. قواعد حاسمة: كل أسماء المتغيرات والدوال لاتينية فقط " +
+  "(لا عربية إطلاقاً)، وتجنّب ++ (غير موجود في لواو)، والسيرفر هو صاحب الحقيقة دائماً (لا تثق بالكلينت).";
+
 /** إجابة مولّدة عبر Qwen بسياق المعرفة المسترجعة — تعيد null عند التعطيل/الفشل/الطريقة دون اتصال */
 async function qwenEngineAnswer(
   question: string,
   results: ScoredDoc[],
-  offline = false
+  offline = false,
+  huge = false
 ): Promise<EngineAnswer | null> {
   if (!qwenAvailable() || offline) return null;
 
-  const context = buildRagContext(results);
+  const context = buildRagContext(results, huge ? 14000 : 9000);
   const user =
     (context
       ? "معلومات من قاعدة معرفتي (وثائق، معارف لاعبين، كتب، صفحات قرأتها):\n" + context + "\n\n"
@@ -349,12 +378,17 @@ async function qwenEngineAnswer(
     "سؤال اللاعب: " +
     question;
 
-  const text = await qwenChat({ system: QWEN_SYSTEM, user });
+  const text = await qwenChat({
+    system: huge ? QWEN_SYSTEM_HUGE : QWEN_SYSTEM,
+    user,
+    maxTokens: huge ? 14000 : undefined,
+    timeoutMs: huge ? 90_000 : undefined,
+  });
   if (!text) return null;
 
   const parsed = parseQwenAnswer(text);
   const named = results
-    .slice(0, 3)
+    .slice(0, 4)
     .map((r) => sourceLabel(r.doc));
 
   return {
@@ -367,7 +401,7 @@ async function qwenEngineAnswer(
       parsed.tips.length > 0
         ? parsed.tips
         : ["إجابة مولّدة بالذكاء الاصطناعي — جرّب المثال في ستوديو قبل اعتماده."],
-    sources: [...named, "مولّد بذكاء Qwen"],
+    sources: [...named, "مولّد بذكاء اصطناعي (Groq)"],
     followUps: [
       "اشرح لي هذا الكود سطراً سطراً",
       "أعطني نسخة أنشط على هذا الموضوع",
@@ -572,11 +606,12 @@ async function knowledgeAnswer(trimmed: string, offline = false): Promise<Engine
     }
   }
   rawResults.sort((a, b) => b.score - a.score);
-  const results = rawResults.slice(0, 3);
+  const huge = wantsHugeScript(trimmed);
+  const results = rawResults.slice(0, huge ? 5 : 4);
 
   // الدمج الكامل RAG: إن كان النموذج مفعّلاً، يولّد الجواب بسياق المعرفة المسترجعة.
   // أي فشل يعيد null → نكمل بالسيرة اليدوية الحالية دون أي تأثير.
-  const ai = await qwenEngineAnswer(trimmed, results, offline);
+  const ai = await qwenEngineAnswer(trimmed, results, offline, huge);
   if (ai) return ai;
 
   // تغطية السؤال: نرفض فقط إذا لم تتطابق أي كلمة مع أفضل وثيقة

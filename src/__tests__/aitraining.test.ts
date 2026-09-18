@@ -23,8 +23,9 @@ describe("curriculum structure", () => {
     expect(AI_TOPICS.length).toBe(CORE_TOPICS.length + EXTENDED_TOPICS.length);
   });
 
-  it("AI_TOPICS has 475 total topics", () => {
-    expect(AI_TOPICS.length).toBe(475);
+  it("curriculum is massively expanded (600+ topics)", () => {
+    expect(EXTENDED_TOPICS.length).toBeGreaterThanOrEqual(490);
+    expect(AI_TOPICS.length).toBeGreaterThanOrEqual(600);
   });
 
   it("no duplicate topic names across all topics", () => {
