@@ -67,69 +67,105 @@ export async function qwenChat(req: QwenRequest): Promise<string | null> {
   }
 }
 
-async function openaiChat(c: QwenConfig, req: QwenRequest): Promise<string | null> {
-  const response = await fetch(`${c.baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${c.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: c.model,
-      messages: [
-        { role: "system", content: req.system },
-        { role: "user", content: req.user },
-      ],
-      max_tokens: req.maxTokens ?? c.maxTokens,
-      temperature: req.temperature ?? c.temperature,
-    }),
-    signal: AbortSignal.timeout(req.timeoutMs ?? c.timeoutMs),
-  });
+/** مهلة إعادة المحاولة بعد ضغط المعدل (429): من الترويسة أو من نص الخطأ أو افتراض 5 ثوانٍ */
+function parseRetryMs(response: Response, body: string): number {
+  const header = Number(response.headers.get("Retry-After"));
+  if (Number.isFinite(header) && header > 0) return header * 1000;
+  const match = body.match(/try again in ([0-9.]+)\s*s/i);
+  if (match) return Number(match[1]) * 1000;
+  return 5000;
+}
 
-  if (!response.ok) {
+async function openaiChat(c: QwenConfig, req: QwenRequest): Promise<string | null> {
+  const maxAttempts = 4;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const response = await fetch(`${c.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${c.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: c.model,
+        messages: [
+          { role: "system", content: req.system },
+          { role: "user", content: req.user },
+        ],
+        max_tokens: req.maxTokens ?? c.maxTokens,
+        temperature: req.temperature ?? c.temperature,
+      }),
+      signal: AbortSignal.timeout(req.timeoutMs ?? c.timeoutMs),
+    });
+
+    if (response.ok) {
+      const data = (await response.json()) as {
+        choices?: { message?: { content?: unknown } }[];
+        usage?: { total_tokens?: unknown };
+      };
+      const text = data.choices?.[0]?.message?.content;
+      return typeof text === "string" ? text : null;
+    }
+
     const body = await response.text().catch(() => "");
+    if (response.status === 429 && attempt < maxAttempts) {
+      const waitMs = parseRetryMs(response, body) + 800;
+      console.error(
+        `qwen rate limited (429) — انتظار ~${Math.round(waitMs / 1000)}s ثم إعادة المحاولة (${attempt}/${maxAttempts - 1})`,
+        body.slice(0, 200)
+      );
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+      continue;
+    }
+
     console.error("qwen http error", response.status, body.slice(0, 300));
     return null;
   }
-
-  const data = (await response.json()) as {
-    choices?: { message?: { content?: unknown } }[];
-    usage?: { total_tokens?: unknown };
-  };
-  const text = data.choices?.[0]?.message?.content;
-  return typeof text === "string" ? text : null;
+  return null;
 }
 
 /** نقطة Gemini يستقبل المفتاح كمعامل URL والصيغة struct فيها — لا سجل رسائل */
 async function geminiChat(c: QwenConfig, req: QwenRequest): Promise<string | null> {
-  const response = await fetch(
-    `${c.baseUrl}/models/${encodeURIComponent(c.model)}:generateContent?key=${encodeURIComponent(c.apiKey)}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: req.user }] }],
-        ...(req.system ? { systemInstruction: { parts: [{ text: req.system }] } } : {}),
-        generationConfig: {
-          maxOutputTokens: req.maxTokens ?? c.maxTokens,
-          temperature: req.temperature ?? c.temperature,
-        },
-      }),
-      signal: AbortSignal.timeout(req.timeoutMs ?? c.timeoutMs),
-    }
-  );
+  const maxAttempts = 4;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const response = await fetch(
+      `${c.baseUrl}/models/${encodeURIComponent(c.model)}:generateContent?key=${encodeURIComponent(c.apiKey)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: req.user }] }],
+          ...(req.system ? { systemInstruction: { parts: [{ text: req.system }] } } : {}),
+          generationConfig: {
+            maxOutputTokens: req.maxTokens ?? c.maxTokens,
+            temperature: req.temperature ?? c.temperature,
+          },
+        }),
+        signal: AbortSignal.timeout(req.timeoutMs ?? c.timeoutMs),
+      }
+    );
 
-  if (!response.ok) {
+    if (response.ok) {
+      const data = (await response.json()) as {
+        candidates?: { content?: { parts?: { text?: unknown }[] } }[];
+      };
+      return data.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") ?? "";
+    }
+
     const body = await response.text().catch(() => "");
+    if (response.status === 429 && attempt < maxAttempts) {
+      const waitMs = parseRetryMs(response, body) + 800;
+      console.error(
+        `gemini rate limited (429) — انتظار ~${Math.round(waitMs / 1000)}s ثم إعادة المحاولة (${attempt}/${maxAttempts - 1})`,
+        body.slice(0, 200)
+      );
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+      continue;
+    }
+
     console.error("gemini http error", response.status, body.slice(0, 300));
     return null;
   }
-
-  const data = (await response.json()) as {
-    candidates?: { content?: { parts?: { text?: unknown }[] } }[];
-  };
-  const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") ?? "";
-  return typeof text === "string" ? text : "";
+  return null;
 }
 
 export interface ParsedAnswer {
