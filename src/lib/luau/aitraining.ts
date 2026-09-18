@@ -489,6 +489,7 @@ export async function trainingStatus(): Promise<{
   coreComplete: boolean;
   lastTrainedAt: string | null;
   nextTopics: string[];
+  remainingCount: number;
 }> {
   let rows: Array<{ title: string; tags: string; createdAt: Date | null }>;
   try {
@@ -508,6 +509,7 @@ export async function trainingStatus(): Promise<{
       coreComplete: false,
       lastTrainedAt: null,
       nextTopics: [],
+      remainingCount: AI_TOPICS.length,
     };
   }
 
@@ -521,6 +523,7 @@ export async function trainingStatus(): Promise<{
     }
   }
   const nextTopics = AI_TOPICS.filter((t) => !trainedTopics.has(t.topic)).map((t) => t.topic).slice(0, 5);
+  const remainingCount = AI_TOPICS.length - trainedTopics.size;
 
   // اكتمال المنهج الأساسي (بوابة الزر): لا مواضيع أساسية ناقصة، أو عدد الدروس بلغ حجم الأساسي.
   const coreMissing = CORE_TOPICS.filter((t) => !trainedTopics.has(t.topic)).length;
@@ -533,5 +536,6 @@ export async function trainingStatus(): Promise<{
     coreComplete,
     lastTrainedAt: rows[0]?.createdAt?.toISOString?.() ?? null,
     nextTopics,
+    remainingCount,
   };
 }

@@ -160,6 +160,7 @@ export async function runAutoTrainCycle(batch = 4): Promise<AutoCycleResult> {
       coreComplete: false,
       lastTrainedAt: null,
       nextTopics: [],
+      remainingCount: AI_TOPICS.length,
     };
   }
 
@@ -170,7 +171,7 @@ export async function runAutoTrainCycle(batch = 4): Promise<AutoCycleResult> {
   // حتى لا تُهمَل مواضيع المنهج الموسّع.
   const curriculumDone =
     status.nextTopics.length === 0 || status.aiDocs >= AI_TOPICS.length;
-  const remaining = curriculumDone ? 0 : status.nextTopics.length;
+  const remaining = curriculumDone ? 0 : (status.remainingCount ?? status.nextTopics.length);
   let complete = state.complete;
   if (curriculumDone) {
     const loaded = await loadLibraryCandidates();
